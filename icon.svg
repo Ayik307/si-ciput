@@ -7,9 +7,8 @@
     </radialGradient>
   </defs>
   <rect width="512" height="512" rx="115" fill="url(#bg)"/>
-  <ellipse cx="256" cy="560" rx="280" ry="120" fill="#1a9c5b" fill-opacity="0.18"/>
-  <text x="256" y="268" font-family="Arial, sans-serif" font-size="200" font-weight="700" fill="white" text-anchor="middle" dominant-baseline="middle" letter-spacing="-4">SC</text>
-  <line x1="106" y1="310" x2="406" y2="310" stroke="white" stroke-opacity="0.3" stroke-width="2"/>
-  <text x="256" y="356" font-family="Arial, sans-serif" font-size="36" font-weight="400" fill="white" fill-opacity="0.85" text-anchor="middle" letter-spacing="6">SI CIPUT</text>
-  <rect width="512" height="512" rx="115" fill="none" stroke="#1a9c5b" stroke-opacity="0.4" stroke-width="4"/>
+  <text x="256" y="268" font-family="Arial" font-size="200" font-weight="700"
+    fill="white" text-anchor="middle" dominant-baseline="middle">SC</text>
+  <text x="256" y="356" font-family="Arial" font-size="36" font-weight="400"
+    fill="white" fill-opacity="0.85" text-anchor="middle" letter-spacing="6">SI CIPUT</text>
 </svg>
