@@ -13,6 +13,50 @@
     });
   }
 </script>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import {
+    getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+    updateDoc, deleteDoc, onSnapshot, query, orderBy, limit,
+    serverTimestamp, writeBatch, where
+  } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  // ============================================================
+  // 🔧 KONFIGURASI FIREBASE
+  // Config diambil dari localStorage (diisi via setup modal)
+  // ============================================================
+  let FIREBASE_CONFIG = null;
+  try {
+    const saved = localStorage.getItem('ciput_fbconfig');
+    if(saved) FIREBASE_CONFIG = JSON.parse(saved);
+  } catch(e) {}
+
+  // Cek apakah config sudah diisi
+  const CONFIG_READY = !!(FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+
+  let app, db;
+  if (CONFIG_READY) {
+    try {
+      app = initializeApp(FIREBASE_CONFIG);
+      db = getFirestore(app);
+      window._db = db;
+      window._fbModules = { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, writeBatch, where };
+      window._fbReady = true;
+      console.log('✅ Firebase terhubung');
+    } catch(e) {
+      console.error('❌ Firebase gagal:', e);
+      window._fbReady = false;
+    }
+  } else {
+    window._fbReady = false;
+    console.warn('⚠️ Firebase belum dikonfigurasi. Berjalan mode lokal.');
+  }
+
+  // Expose init selesai
+  window._fbInitDone = true;
+  document.dispatchEvent(new Event('fb-ready'));
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -204,6 +248,13 @@
   .ai-spinner{width:16px;height:16px;border:2px solid var(--abu2);border-top-color:var(--biru);border-radius:50%;animation:spin 0.8s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .btn-ai{background:linear-gradient(90deg,#1565c0,#1a9c5b);color:#fff;font-size:0.85rem;padding:10px;border-radius:10px;margin-bottom:0.75rem;width:100%;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;}
+  .ai-key-bar{display:flex;align-items:center;gap:8px;background:var(--abu);border:1.5px solid var(--abu2);border-radius:10px;padding:9px 12px;margin-bottom:0.75rem;flex-wrap:wrap;}
+  .ai-key-dot{width:9px;height:9px;border-radius:50%;background:var(--abu3);flex-shrink:0;transition:background 0.3s;}
+  .ai-key-dot.aktif{background:var(--hijau);}
+  .ai-key-dot.error{background:var(--merah);}
+  .ai-key-label{font-size:0.75rem;color:var(--teks2);flex:1;min-width:80px;}
+  .btn-ai-setup{background:var(--biru);color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:0.75rem;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;}
+  .ai-model-chip{font-size:0.68rem;background:#e8f5e9;color:#1b5e20;border-radius:20px;padding:2px 8px;font-weight:600;border:1px solid #a5d6a7;}
   .success-screen{text-align:center;padding:2rem 1rem;}
   .success-circle{width:80px;height:80px;border-radius:50%;background:var(--hijau-bg);border:3px solid var(--hijau);display:flex;align-items:center;justify-content:center;font-size:2.2rem;margin:0 auto 1rem;}
   .riwayat-pasien-empty{text-align:center;padding:2rem;color:var(--abu3);font-size:0.85rem;}
@@ -278,6 +329,32 @@
 <body>
 <div class="notif-darurat" id="notifDarurat">🚨 Laporan darurat terkirim!</div>
 <div class="notif-sukses" id="notifSukses">✅ Berhasil disimpan!</div>
+<!-- Sync status bar -->
+<div id="syncBar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;padding:6px 16px;font-size:0.78rem;font-weight:600;text-align:center;transition:all 0.3s;"></div>
+<!-- Firebase setup modal -->
+<div id="fbSetupModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:440px;">
+    <div class="modal-title">🔥 Setup Sinkronisasi Firebase</div>
+    <p style="font-size:0.82rem;color:var(--teks2);margin-bottom:1rem;line-height:1.6;">
+      Untuk sinkronisasi data antar semua perangkat, Si Ciput memerlukan Firebase Firestore (gratis).<br><br>
+      <strong>Langkah setup (5 menit):</strong><br>
+      1. Buka <a href="https://console.firebase.google.com" target="_blank" style="color:var(--biru);">console.firebase.google.com</a><br>
+      2. Buat project → Firestore Database → mode test<br>
+      3. Project Settings → Add Web App → copy config<br>
+      4. Paste konfigurasi JSON di bawah ini
+    </p>
+    <div class="modal-form-group"><label>Firebase Config (JSON)</label>
+      <textarea id="fbConfigInput" rows="8" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'
+        style="font-family:monospace;font-size:0.75rem;"></textarea>
+    </div>
+    <div id="fbSetupError" style="color:var(--merah);font-size:0.8rem;margin-bottom:0.5rem;display:none;"></div>
+    <div class="modal-btn-row">
+      <button class="btn btn-outline btn-sm" onclick="tutupFbSetup()">Nanti Saja</button>
+      <button class="btn btn-primary btn-sm" onclick="simpanFbConfig()">💾 Simpan & Aktifkan</button>
+    </div>
+    <p style="font-size:0.72rem;color:var(--abu3);margin-top:0.75rem;text-align:center;">Tanpa Firebase, data hanya tersimpan di perangkat ini</p>
+  </div>
+</div>
 
 <!-- LOGIN -->
 <div id="screen-login" class="screen active">
@@ -479,10 +556,16 @@
       <div class="dash-section"><div class="section-title">Laporan Terbaru</div><div id="laporanTerbaru"></div></div>
       <div class="dash-section"><div class="section-title">Indikator Program</div><div id="indikatorList"></div></div>
       <div class="dash-section">
-        <div class="section-title">🤖 Analisis AI</div>
+        <div class="section-title">🤖 Analisis AI — Google Gemini</div>
+        <div class="ai-key-bar" id="aiKeyBar">
+          <div class="ai-key-dot error" id="aiKeyDot"></div>
+          <span class="ai-key-label" id="aiKeyLabel">API Key belum diatur</span>
+          <span class="ai-model-chip">Gemini 2.0 Flash</span>
+          <button class="btn-ai-setup" onclick="bukaModalAISetup()">⚙️ Atur Key</button>
+        </div>
         <div class="ai-box">
           <h4 style="font-size:0.88rem;font-weight:700;color:var(--biru-tua);margin-bottom:0.5rem;">✨ Analisis Cerdas Program CIPUT</h4>
-          <div id="aiDashResult"><p style="font-size:0.82rem;color:var(--abu3);">Belum dianalisis.</p></div>
+          <div id="aiDashResult"><p style="font-size:0.82rem;color:var(--abu3);">Belum dianalisis. Atur Google AI Studio API Key terlebih dahulu.</p></div>
           <button class="btn-ai" id="btnAIDash" onclick="analisisAIDashboard()" style="margin-top:0.75rem;">✨ Analisis dengan AI</button>
         </div>
       </div>
@@ -632,12 +715,99 @@
 </div>
 
 <script>
-const USERS = {
-  'PW-001':{password:'ciput123',role:'petugas',nama:'Sari Dewi Lestari',emoji:'👩',wilayah:'RW 01'},
-  'PW-002':{password:'ciput123',role:'petugas',nama:'Budi Hartono',emoji:'👨',wilayah:'RW 02'},
-  'PW-003':{password:'ciput123',role:'petugas',nama:'Nur Aini',emoji:'👩',wilayah:'RW 03'},
-  'admin':{password:'admin123',role:'puskesmas',nama:'Admin Puskesmas',emoji:'🏥',wilayah:'Semua RW'}
-};
+// =============================================
+// SI CIPUT v4.0 — Firebase Sync Engine
+// =============================================
+
+// ---------- Firebase Config Storage ----------
+function getFbConfig(){
+  try { return JSON.parse(localStorage.getItem('ciput_fbconfig')||'null'); } catch(e){ return null; }
+}
+function saveFbConfigLocal(cfg){
+  localStorage.setItem('ciput_fbconfig', JSON.stringify(cfg));
+}
+
+// ---------- Sync status UI ----------
+function showSyncBar(msg, type='info'){
+  const bar = document.getElementById('syncBar');
+  if(!bar) return;
+  bar.textContent = msg;
+  bar.style.display = 'block';
+  bar.style.background = type==='ok' ? '#1a9c5b' : type==='err' ? '#c0392b' : '#1565c0';
+  bar.style.color = '#fff';
+  if(type==='ok' || type==='info') setTimeout(()=>{ bar.style.display='none'; }, 3000);
+}
+function hideSyncBar(){ const b=document.getElementById('syncBar'); if(b) b.style.display='none'; }
+
+// ---------- Firebase Setup Modal ----------
+function bukaFbSetup(){
+  const modal = document.getElementById('fbSetupModal');
+  if(modal) modal.classList.add('open');
+  const cfg = getFbConfig();
+  if(cfg) document.getElementById('fbConfigInput').value = JSON.stringify(cfg, null, 2);
+}
+function tutupFbSetup(){ tutupModal('fbSetupModal'); }
+function simpanFbConfig(){
+  const raw = document.getElementById('fbConfigInput').value.trim();
+  const errEl = document.getElementById('fbSetupError');
+  errEl.style.display='none';
+  try {
+    const cfg = JSON.parse(raw);
+    if(!cfg.apiKey || !cfg.projectId){ errEl.textContent='⚠️ Config tidak lengkap.'; errEl.style.display='block'; return; }
+    saveFbConfigLocal(cfg);
+    showNotifSukses('🔥 Config disimpan! Memuat ulang...');
+    setTimeout(()=>location.reload(), 1500);
+  } catch(e) {
+    errEl.textContent='⚠️ Format JSON tidak valid: '+e.message;
+    errEl.style.display='block';
+  }
+}
+
+// =============================================
+// DB ABSTRACTION LAYER
+// Semua fungsi read/write melewati lapisan ini
+// Jika Firebase ready → Firestore, jika tidak → localStorage
+// =============================================
+
+const USE_FB = () => !!window._fbReady;
+const DB = () => window._db;
+const FB = () => window._fbModules;
+
+// -- localStorage fallback (sama seperti sebelumnya) --
+function lsGet(k, d=[]){ try{ return JSON.parse(localStorage.getItem('ciput_'+k))??d; }catch(e){ return d; } }
+function lsSet(k, v){ try{ localStorage.setItem('ciput_'+k, JSON.stringify(v)); }catch(e){} }
+
+// -- Firestore helpers --
+async function fbGetCollection(colName){
+  const { getDocs, collection, query, orderBy } = FB();
+  try {
+    const snap = await getDocs(collection(DB(), colName));
+    return snap.docs.map(d => ({...d.data(), _docId: d.id}));
+  } catch(e){ console.error('fbGetCollection', colName, e); return []; }
+}
+async function fbSetDoc(colName, docId, data){
+  const { doc, setDoc, serverTimestamp } = FB();
+  try {
+    await setDoc(doc(DB(), colName, String(docId)), {...data, _updatedAt: serverTimestamp()}, {merge:true});
+    return true;
+  } catch(e){ console.error('fbSetDoc', e); return false; }
+}
+async function fbDeleteDoc(colName, docId){
+  const { doc, deleteDoc } = FB();
+  try { await deleteDoc(doc(DB(), colName, String(docId))); return true; }
+  catch(e){ console.error('fbDeleteDoc', e); return false; }
+}
+async function fbAddDoc(colName, data){
+  const { addDoc, collection, serverTimestamp } = FB();
+  try {
+    const ref = await addDoc(collection(DB(), colName), {...data, _createdAt: serverTimestamp()});
+    return ref.id;
+  } catch(e){ console.error('fbAddDoc', e); return null; }
+}
+
+// =============================================
+// DATA LAYER — Pasien
+// =============================================
 const DATA_PASIEN_AWAL=[
   {id:1,nama:"Ibu Kartini Rahayu",alamat:"Jl. Mawar No. 12, RW 01",kategori:"Lansia · Diabetes",kondisi:"hijau",pw:"PW-001",jadwal:"08:30",lat:-6.3490,lng:106.8710},
   {id:2,nama:"Bpk. Surya Atmaja",alamat:"Jl. Melati No. 4, RW 01",kategori:"Pasca Stroke",kondisi:"kuning",pw:"PW-001",jadwal:"09:15",lat:-6.3495,lng:106.8718},
@@ -648,6 +818,278 @@ const DATA_PASIEN_AWAL=[
   {id:7,nama:"Ibu Siti Aminah",alamat:"Jl. Dahlia No. 15, RW 02",kategori:"Lansia",kondisi:"hijau",pw:"PW-002",jadwal:"09:30",lat:-6.3520,lng:106.8725},
   {id:8,nama:"Bpk. Ahmad Fauzi",alamat:"Jl. Tulip No. 2, RW 03",kategori:"Hipertensi Kronis",kondisi:"kuning",pw:"PW-003",jadwal:"10:30",lat:-6.3525,lng:106.8735},
 ];
+
+let dataPasien = [];
+
+async function loadDataPasien(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('pasien');
+    if(rows.length > 0){
+      dataPasien = rows.map(r => { const {_docId,_updatedAt,...rest} = r; return rest; });
+    } else {
+      // Seed initial data ke Firestore jika kosong
+      dataPasien = JSON.parse(JSON.stringify(DATA_PASIEN_AWAL));
+      await saveDataPasien();
+    }
+  } else {
+    const s = lsGet('pasien', null);
+    dataPasien = s || JSON.parse(JSON.stringify(DATA_PASIEN_AWAL));
+  }
+}
+
+async function saveDataPasien(){
+  if(USE_FB()){
+    const promises = dataPasien.map(p => fbSetDoc('pasien', p.id, p));
+    await Promise.all(promises);
+    showSyncBar('🔄 Data pasien tersinkronisasi', 'ok');
+  } else {
+    lsSet('pasien', dataPasien);
+  }
+}
+
+async function deletePasienFromDB(id){
+  if(USE_FB()){ await fbDeleteDoc('pasien', id); }
+  dataPasien = dataPasien.filter(x => x.id !== id);
+  if(!USE_FB()) lsSet('pasien', dataPasien);
+}
+
+// Real-time listener for pasien (Firestore only)
+let _pasienListener = null;
+function subscribeDataPasien(){
+  if(!USE_FB()) return;
+  const { collection, onSnapshot } = FB();
+  _pasienListener = onSnapshot(collection(DB(), 'pasien'), (snap) => {
+    const newData = snap.docs.map(d => { const {_docId,_updatedAt,...rest} = d.data(); return rest; });
+    if(newData.length > 0){
+      dataPasien = newData;
+      // Refresh UI if user logged in
+      if(currentUser?.role === 'petugas'){
+        renderPasienList();
+        renderRute();
+        updateStatsBeranda();
+      }
+      if(currentUser?.role === 'puskesmas'){
+        renderMgmtPasien();
+        renderDashboard();
+      }
+    }
+    showSyncBar('🟢 Tersinkronisasi', 'ok');
+  }, (err) => {
+    console.error('Pasien listener error:', err);
+    showSyncBar('⚠️ Koneksi terputus — mode offline', 'err');
+  });
+}
+
+// =============================================
+// DATA LAYER — Riwayat (Kunjungan)
+// =============================================
+async function getRiwayat(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('riwayat');
+    return rows.map(r => { const {_docId,_createdAt,...rest} = r; return rest; })
+               .sort((a,b) => new Date(b.waktu) - new Date(a.waktu));
+  } else {
+    return lsGet('riwayat', []);
+  }
+}
+async function saveRiwayat(arr){
+  // riwayat disimpan per item, tidak replace all
+  if(!USE_FB()) lsSet('riwayat', arr);
+  // Firestore: tidak batch-replace, item disimpan via addRiwayat/editRiwayat
+}
+async function addRiwayat(laporan){
+  if(USE_FB()){
+    const id = await fbAddDoc('riwayat', laporan);
+    laporan._fbId = id;
+    showSyncBar('📋 Laporan tersinkronisasi', 'ok');
+  } else {
+    const arr = lsGet('riwayat', []);
+    arr.unshift(laporan);
+    lsSet('riwayat', arr);
+  }
+}
+async function updateRiwayat(laporanId, patch){
+  if(USE_FB()){
+    // Find by numeric id
+    const { collection, query, where, getDocs, updateDoc } = FB();
+    const snap = await getDocs(query(collection(DB(),'riwayat'), where('id','==',laporanId)));
+    if(!snap.empty){
+      await updateDoc(snap.docs[0].ref, patch);
+      showSyncBar('✏️ Laporan diperbarui', 'ok');
+    }
+  } else {
+    let arr = lsGet('riwayat', []);
+    const idx = arr.findIndex(x => x.id === laporanId);
+    if(idx !== -1){ arr[idx] = {...arr[idx], ...patch}; lsSet('riwayat', arr); }
+  }
+}
+async function deleteRiwayat(laporanId){
+  if(USE_FB()){
+    const { collection, query, where, getDocs, deleteDoc } = FB();
+    const snap = await getDocs(query(collection(DB(),'riwayat'), where('id','==',laporanId)));
+    if(!snap.empty) await deleteDoc(snap.docs[0].ref);
+    showSyncBar('🗑️ Laporan dihapus', 'ok');
+  } else {
+    let arr = lsGet('riwayat', []);
+    lsSet('riwayat', arr.filter(x => x.id !== laporanId));
+  }
+}
+
+// Real-time listener for riwayat
+let _riwayatListener = null;
+function subscribeRiwayat(){
+  if(!USE_FB()) return;
+  const { collection, onSnapshot } = FB();
+  _riwayatListener = onSnapshot(collection(DB(), 'riwayat'), () => {
+    // Re-render laporan panel if dashboard open
+    if(currentUser?.role === 'puskesmas'){
+      renderSemuaLaporan();
+      renderDashboard();
+    }
+    if(currentUser?.role === 'petugas') updateStatsBeranda();
+  });
+}
+
+// =============================================
+// DATA LAYER — Darurat
+// =============================================
+async function getDarurat(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('darurat');
+    return rows.map(r => { const {_docId,_createdAt,...rest} = r; return rest; })
+               .sort((a,b) => new Date(b.waktu) - new Date(a.waktu));
+  }
+  return lsGet('darurat', []);
+}
+async function addDarurat(item){
+  if(USE_FB()){
+    await fbAddDoc('darurat', item);
+    showSyncBar('🚨 Darurat tersinkronisasi!', 'err');
+  } else {
+    const arr = lsGet('darurat', []);
+    arr.unshift(item);
+    lsSet('darurat', arr);
+  }
+}
+
+let _daruratListener = null;
+function subscribeDarurat(){
+  if(!USE_FB()) return;
+  const { collection, onSnapshot } = FB();
+  _daruratListener = onSnapshot(collection(DB(), 'darurat'), () => {
+    if(currentUser?.role === 'puskesmas') renderDashboard();
+  });
+}
+
+// =============================================
+// DATA LAYER — Users / Petugas
+// =============================================
+const USERS = {
+  'PW-001':{password:'ciput123',role:'petugas',nama:'Sari Dewi Lestari',emoji:'👩',wilayah:'RW 01'},
+  'PW-002':{password:'ciput123',role:'petugas',nama:'Budi Hartono',emoji:'👨',wilayah:'RW 02'},
+  'PW-003':{password:'ciput123',role:'petugas',nama:'Nur Aini',emoji:'👩',wilayah:'RW 03'},
+  'admin':{password:'admin123',role:'puskesmas',nama:'Admin Puskesmas',emoji:'🏥',wilayah:'Semua RW'}
+};
+let usersData = {};
+
+async function loadUsers(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('users');
+    if(rows.length > 0){
+      usersData = {};
+      rows.forEach(r => { const id = r.id; const {_docId,_updatedAt,...rest} = r; usersData[id] = rest; });
+    } else {
+      usersData = JSON.parse(JSON.stringify(USERS));
+      await saveUsers();
+    }
+  } else {
+    const s = lsGet('users', null);
+    usersData = s || JSON.parse(JSON.stringify(USERS));
+  }
+}
+async function saveUsers(){
+  if(USE_FB()){
+    const promises = Object.entries(usersData).map(([id, u]) => fbSetDoc('users', id, {id, ...u}));
+    await Promise.all(promises);
+    showSyncBar('👥 Data petugas tersinkronisasi', 'ok');
+  } else {
+    lsSet('users', usersData);
+  }
+}
+async function deleteUser(id){
+  if(USE_FB()) await fbDeleteDoc('users', id);
+  delete usersData[id];
+  if(!USE_FB()) lsSet('users', usersData);
+}
+
+// =============================================
+// DATA LAYER — Instruksi
+// =============================================
+async function getInstruksi(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('instruksi');
+    return rows.map(r => { const {_docId,_createdAt,...rest} = r; return rest; })
+               .sort((a,b) => new Date(b.waktu) - new Date(a.waktu));
+  }
+  return lsGet('instruksi', []);
+}
+async function saveInstruksiItem(item){
+  if(USE_FB()){
+    await fbAddDoc('instruksi', item);
+    showSyncBar('📨 Instruksi terkirim', 'ok');
+  } else {
+    const arr = lsGet('instruksi', []);
+    arr.unshift(item);
+    lsSet('instruksi', arr);
+  }
+}
+
+let _instruksiListener = null;
+function subscribeInstruksi(){
+  if(!USE_FB()) return;
+  const { collection, onSnapshot } = FB();
+  _instruksiListener = onSnapshot(collection(DB(), 'instruksi'), () => {
+    if(currentUser?.role === 'petugas'){
+      checkInstruksiBaru();
+    }
+  });
+}
+
+// =============================================
+// DATA LAYER — Activity Log
+// =============================================
+async function getLog(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('actlog');
+    return rows.map(r => { const {_docId,_createdAt,...rest} = r; return rest; })
+               .sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  }
+  return lsGet('actlog', []);
+}
+async function addLogEntry(entry){
+  if(USE_FB()){
+    // Fire and forget
+    fbAddDoc('actlog', entry).catch(()=>{});
+  } else {
+    let arr = lsGet('actlog', []);
+    arr.unshift(entry);
+    if(arr.length > 2000) arr = arr.slice(0, 2000);
+    lsSet('actlog', arr);
+  }
+}
+async function clearLog(){
+  if(USE_FB()){
+    const rows = await fbGetCollection('actlog');
+    const promises = rows.map(r => fbDeleteDoc('actlog', r._docId));
+    await Promise.all(promises);
+  } else {
+    lsSet('actlog', []);
+  }
+}
+
+// =============================================
+// EDUKASI
+// =============================================
 const edukasiData={
   jatuh:{judul:"🦺 Pencegahan Jatuh pada Lansia",isi:"• Pastikan lantai tidak licin\n• Gunakan alas kaki anti-slip\n• Pasang pegangan di kamar mandi\n• Periksa penglihatan lansia secara rutin\n• Hindari karpet yang mudah tersangkut\n• Lakukan latihan keseimbangan ringan setiap hari"},
   lansia:{judul:"👴 Perawatan Lansia Harian",isi:"• Pantau asupan makan dan minum minimal 1,5L/hari\n• Cek tekanan darah rutin\n• Dampingi aktivitas fisik ringan\n• Perhatikan kebersihan kulit untuk mencegah luka\n• Pastikan obat diminum sesuai jadwal"},
@@ -657,23 +1099,31 @@ const edukasiData={
   disabilitas:{judul:"♿ Pendampingan Penyandang Disabilitas",isi:"• Bantu aktivitas sehari-hari sesuai kemampuan pasien\n• Dorong kemandirian\n• Pastikan alat bantu dalam kondisi baik\n• Laporkan jika ada luka tekan atau komplikasi baru"}
 };
 
-let currentUser=null,currentPasien=null,selectedKondisi='',dataPasien=[],usersData={};
-let petaMap=null,petaInit=false,mediaRecorder=null,rekamChunks=[],rekamTimer=null,rekamDetik=0,isRekam=false,fotoDataUrl=null;
+// =============================================
+// APP STATE
+// =============================================
+let currentUser=null, currentPasien=null, selectedKondisi='';
+let petaMap=null, petaInit=false;
+let mediaRecorder=null, rekamChunks=[], rekamTimer=null, rekamDetik=0, isRekam=false;
+let fotoDataUrl=null;
 
-function getStorage(k,d=[]){try{return JSON.parse(localStorage.getItem('ciput_'+k))??d;}catch(e){return d;}}
-function setStorage(k,v){try{localStorage.setItem('ciput_'+k,JSON.stringify(v));}catch(e){}}
-function loadDataPasien(){const s=getStorage('pasien',null);dataPasien=s||JSON.parse(JSON.stringify(DATA_PASIEN_AWAL));}
-function saveDataPasien(){setStorage('pasien',dataPasien);}
-function getRiwayat(){return getStorage('riwayat',[]);}
-function saveRiwayat(a){setStorage('riwayat',a);}
-function getDarurat(){return getStorage('darurat',[]);}
-function saveDarurat(a){setStorage('darurat',a);}
-function loadUsers(){const s=getStorage('users',null);usersData=s||JSON.parse(JSON.stringify(USERS));}
-function saveUsers(){setStorage('users',usersData);}
-function getInstruksi(){return getStorage('instruksi',[]);}
-function saveInstruksi(a){setStorage('instruksi',a);}
-function allPetugasList(){return Object.entries(usersData).filter(([,u])=>u.role==='petugas').map(([id,u])=>({id,...u}));}
+// =============================================
+// HELPERS
+// =============================================
+function badgeKondisi(k){
+  if(k==='hijau') return '<span class="badge hijau">🟢 Stabil</span>';
+  if(k==='kuning') return '<span class="badge kuning">🟡 Perhatian</span>';
+  return '<span class="badge merah">🔴 Darurat</span>';
+}
+function jamSekarang(){ return new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); }
+function tglISO(){ return new Date().toISOString().slice(0,10); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function pasienSaya(){ return dataPasien.filter(p=>p.pw===currentUser?.id); }
+function allPetugasList(){ return Object.entries(usersData).filter(([,u])=>u.role==='petugas').map(([id,u])=>({id,...u})); }
 
+// =============================================
+// AUTH
+// =============================================
 let currentRole='petugas';
 function setRole(role,el){
   currentRole=role;
@@ -683,33 +1133,73 @@ function setRole(role,el){
   document.getElementById('loginPw').value=role==='puskesmas'?'admin123':'ciput123';
 }
 
-function doLogin(){
+async function doLogin(){
   const id=document.getElementById('loginId').value.trim();
   const pw=document.getElementById('loginPw').value;
   const errEl=document.getElementById('loginError');
+
+  // Show loading
+  const btn = document.querySelector('#screen-login .btn-primary');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Masuk...'; }
+
+  // Reload users from Firestore before login check
+  await loadUsers();
+
   const user=usersData[id];
-  if(!user||user.password!==pw){errEl.style.display='block';return;}
+  if(!user||user.password!==pw){
+    errEl.style.display='block';
+    if(btn){ btn.disabled=false; btn.textContent='Masuk →'; }
+    return;
+  }
   errEl.style.display='none';
   currentUser={...user,id};
-  loadDataPasien();
+  await loadDataPasien();
+
   const tgl=new Date().toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   document.getElementById('tglHariIni').textContent=tgl;
   document.getElementById('tglDashboard').textContent=tgl;
   document.getElementById('namaUser').textContent=id;
   addLog('login','LOGIN',`${currentUser.nama} (${id})`,`Role: ${user.role}`,id);
-  if(user.role==='puskesmas'){showScreen('screen-dashboard');renderMgmtPasien();}
-  else{showScreen('screen-petugas');renderPasienList();renderRute();renderPengingat();updateStatsBeranda();checkInstruksiBaru();}
+
+  // Start real-time listeners
+  subscribeDataPasien();
+  subscribeRiwayat();
+  subscribeDarurat();
+  subscribeInstruksi();
+
+  if(btn){ btn.disabled=false; btn.textContent='Masuk →'; }
+
+  if(user.role==='puskesmas'){
+    showScreen('screen-dashboard');
+    renderMgmtPasien();
+  } else {
+    showScreen('screen-petugas');
+    renderPasienList();
+    renderRute();
+    renderPengingat();
+    updateStatsBeranda();
+    checkInstruksiBaru();
+  }
+
+  if(USE_FB()) showSyncBar('🔗 Terhubung ke server — data tersinkronisasi', 'ok');
+  else showSyncBar('⚠️ Mode lokal — data tidak tersinkronisasi antar HP', 'err');
 }
 
 function doLogout(){
-  if(currentUser)addLog('login','LOGOUT',`${currentUser.nama} (${currentUser.id})`,'',currentUser.id);
-  currentUser=null;petaInit=false;petaMap=null;
+  if(currentUser) addLog('login','LOGOUT',`${currentUser.nama} (${currentUser.id})`,'',currentUser.id);
+  // Unsubscribe listeners
+  if(_pasienListener){ _pasienListener(); _pasienListener=null; }
+  if(_riwayatListener){ _riwayatListener(); _riwayatListener=null; }
+  if(_daruratListener){ _daruratListener(); _daruratListener=null; }
+  if(_instruksiListener){ _instruksiListener(); _instruksiListener=null; }
+  currentUser=null; petaInit=false; petaMap=null;
   showScreen('screen-login');
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{b.classList.toggle('active',i===0);});
   document.querySelectorAll('.tab-content').forEach((t,i)=>{t.style.display=i===0?'block':'none';});
+  hideSyncBar();
 }
 
-function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function showScreen(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
 function switchTab(name,btn){
   document.querySelectorAll('.tab-content').forEach(t=>t.style.display='none');
   document.getElementById('tab-'+name).style.display='block';
@@ -717,32 +1207,25 @@ function switchTab(name,btn){
   btn.classList.add('active');
 }
 
-function badgeKondisi(k){
-  if(k==='hijau')return '<span class="badge hijau">🟢 Stabil</span>';
-  if(k==='kuning')return '<span class="badge kuning">🟡 Perhatian</span>';
-  return '<span class="badge merah">🔴 Darurat</span>';
-}
-function jamSekarang(){return new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});}
-function tglISO(){return new Date().toISOString().slice(0,10);}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-
-function pasienSaya(){return dataPasien.filter(p=>p.pw===currentUser?.id);}
-
-function updateStatsBeranda(){
+// =============================================
+// BERANDA PETUGAS
+// =============================================
+async function updateStatsBeranda(){
   const list=pasienSaya();
   document.getElementById('statHijau').textContent=list.filter(p=>p.kondisi==='hijau').length;
   document.getElementById('statKuning').textContent=list.filter(p=>p.kondisi==='kuning').length;
   document.getElementById('statMerah').textContent=list.filter(p=>p.kondisi==='merah').length;
-  const riwayat=getRiwayat().filter(r=>r.petugas===currentUser?.id&&r.tgl===tglISO());
+  const riwayat = await getRiwayat();
+  const rHariIni = riwayat.filter(r=>r.petugas===currentUser?.id&&r.tgl===tglISO());
   const nama=currentUser?.nama?.split(' ')[0]||currentUser?.id;
   const salam=new Date().getHours()<11?'pagi':new Date().getHours()<15?'siang':'sore';
   document.getElementById('welcomeNama').textContent=`Selamat ${salam}, ${nama} 👋`;
-  document.getElementById('welcomeInfo').textContent=`${list.length} pasien binaan · ${riwayat.length} sudah dikunjungi hari ini`;
+  document.getElementById('welcomeInfo').textContent=`${list.length} pasien binaan · ${rHariIni.length} sudah dikunjungi hari ini`;
 }
 
-function renderPasienList(query=''){
+async function renderPasienList(query=''){
   const list=pasienSaya().filter(p=>!query||p.nama.toLowerCase().includes(query.toLowerCase()));
-  const riwayat=getRiwayat();
+  const riwayat = await getRiwayat();
   const visited=new Set(riwayat.filter(r=>r.petugas===currentUser?.id&&r.tgl===tglISO()).map(r=>r.pasienId));
   const el=document.getElementById('daftarPasien');
   if(!list.length){el.innerHTML='<div class="no-data">Tidak ada pasien ditemukan.</div>';return;}
@@ -756,25 +1239,21 @@ function renderPasienList(query=''){
     </div>`;
   }).join('');
 }
-function filterPasien(q){renderPasienList(q);}
+function filterPasien(q){ renderPasienList(q); }
 
-function renderRute(){
+async function renderRute(){
   const list=pasienSaya();
-  const riwayat=getRiwayat();
+  const riwayat = await getRiwayat();
   const visited=new Set(riwayat.filter(r=>r.petugas===currentUser?.id&&r.tgl===tglISO()).map(r=>r.pasienId));
   const el=document.getElementById('rutePasien');
   el.innerHTML=list.map((p,i)=>{
     const done=visited.has(p.id);
-    return `<div class="route-stop">
-      <div class="route-num">${i+1}</div>
-      <div class="route-info"><p class="${done?'route-done':''}">${p.nama}</p><span>${p.alamat} · ${p.jadwal}</span></div>
-      ${badgeKondisi(p.kondisi)}
-    </div>`;
+    return `<div class="route-stop"><div class="route-num">${i+1}</div><div class="route-info"><p class="${done?'route-done':''}">${p.nama}</p><span>${p.alamat} · ${p.jadwal}</span></div>${badgeKondisi(p.kondisi)}</div>`;
   }).join('');
 }
 
 function initPeta(){
-  if(petaInit)return;petaInit=true;
+  if(petaInit)return; petaInit=true;
   setTimeout(()=>{
     const list=pasienSaya();
     if(!list.length)return;
@@ -798,8 +1277,8 @@ function renderPengingat(){
   el.innerHTML=list.map(p=>`<div class="pengingat-item"><div class="ping-icon">🏠</div><div class="ping-info"><p>${p.nama}</p><span>${p.alamat}</span></div><div class="ping-time">${p.jadwal}</div></div>`).join('');
 }
 
-function renderRiwayat(){
-  const list=getRiwayat().filter(r=>r.petugas===currentUser?.id);
+async function renderRiwayat(){
+  const list = (await getRiwayat()).filter(r=>r.petugas===currentUser?.id);
   const el=document.getElementById('daftarRiwayat');
   if(!list.length){el.innerHTML='<div class="riwayat-pasien-empty">Belum ada kunjungan tersimpan.</div>';return;}
   el.innerHTML=list.map(r=>`
@@ -817,36 +1296,49 @@ function renderRiwayat(){
     </div>`).join('');
 }
 
-function renderInstruksiPetugas(){
-  const semua=getInstruksi().filter(i=>!i.targetPetugas||i.targetPetugas===currentUser?.id);
+async function renderInstruksiPetugas(){
+  const semua = (await getInstruksi()).filter(i=>!i.targetPetugas||i.targetPetugas===currentUser?.id);
   const el=document.getElementById('daftarInstruksi');
   if(!semua.length){el.innerHTML='<div class="no-data">Belum ada instruksi dari puskesmas.</div>';return;}
   el.innerHTML=semua.map(i=>`<div class="instruksi-item"><div class="instruksi-dari">📨 Dari Puskesmas · ${i.jam||''} ${i.tgl||''}</div><div class="instruksi-teks">Re: <strong>${i.namaPasien||'—'}</strong><br>${i.instruksi}</div><div class="instruksi-waktu">${new Date(i.waktu).toLocaleString('id-ID')}</div></div>`).join('');
 }
 
-function checkInstruksiBaru(){
-  const semua=getInstruksi().filter(i=>!i.targetPetugas||i.targetPetugas===currentUser?.id);
+async function checkInstruksiBaru(){
+  const semua = (await getInstruksi()).filter(i=>!i.targetPetugas||i.targetPetugas===currentUser?.id);
   const unread=semua.filter(i=>!i.dibaca);
   if(unread.length>0){
     const btn=document.getElementById('btnTabInstruksi');
-    if(btn)btn.innerHTML=`<span style="font-size:20px">📨</span>Instruksi <span style="background:var(--merah);color:#fff;border-radius:10px;padding:1px 6px;font-size:0.65rem;">${unread.length}</span>`;
+    if(btn) btn.innerHTML=`<span style="font-size:20px">📨</span>Instruksi <span style="background:var(--merah);color:#fff;border-radius:10px;padding:1px 6px;font-size:0.65rem;">${unread.length}</span>`;
   }
 }
 
 function renderProfil(){
   if(!currentUser)return;
-  const riwayat=getRiwayat().filter(r=>r.petugas===currentUser.id);
   document.getElementById('profilEmoji').textContent=currentUser.emoji;
   document.getElementById('profilNama').textContent=currentUser.nama;
   document.getElementById('profilSub').textContent=`Pasukan Putih — ${currentUser.wilayah} Ciracas`;
   document.getElementById('profilId').textContent=currentUser.id;
   document.getElementById('profilWilayah').textContent=currentUser.wilayah;
   document.getElementById('profilJumlahPasien').textContent=pasienSaya().length+' pasien';
-  document.getElementById('profilTotalKunjungan').textContent=riwayat.length+' kunjungan';
+  getRiwayat().then(riwayat => {
+    document.getElementById('profilTotalKunjungan').textContent=riwayat.filter(r=>r.petugas===currentUser.id).length+' kunjungan';
+    // Show firebase status in profil
+    const modeEl = document.querySelector('#tab-profil .profil-info-card:last-of-type');
+    if(modeEl && USE_FB()){
+      const existing = document.getElementById('fbStatusRow');
+      if(!existing){
+        const row = document.createElement('div');
+        row.className='profil-row';
+        row.id='fbStatusRow';
+        row.innerHTML='<span>Mode Data</span><span style="color:var(--hijau);">🔗 Firebase Sync</span>';
+        modeEl.insertBefore(row, modeEl.firstChild);
+      }
+    }
+  });
 }
 
 // =============================================
-// KUNJUNGAN — FIXED: tidak ada referensi aiResult
+// KUNJUNGAN
 // =============================================
 function bukaKunjungan(id){
   currentPasien=dataPasien.find(p=>p.id===id);
@@ -854,7 +1346,6 @@ function bukaKunjungan(id){
   document.getElementById('kunjungan-nama').textContent=currentPasien.nama;
   document.getElementById('kunjungan-alamat').textContent='📍 '+currentPasien.alamat;
   document.getElementById('kunjungan-kategori').innerHTML=`<span class="badge biru">${currentPasien.kategori}</span>`;
-  // Reset form
   document.querySelectorAll('.kondisi-btn').forEach(b=>b.classList.remove('selected'));
   document.querySelectorAll('.checklist-item').forEach(c=>c.classList.remove('checked'));
   document.getElementById('catatanTambahan').value='';
@@ -862,32 +1353,30 @@ function bukaKunjungan(id){
   document.getElementById('fotoPreview').innerHTML='';
   document.getElementById('rekamStatus').style.display='none';
   document.getElementById('rekamLabel').textContent='Rekam Suara';
-  selectedKondisi='';
-  fotoDataUrl=null;
+  selectedKondisi=''; fotoDataUrl=null;
   if(isRekam)stopRekam();
   showScreen('screen-kunjungan');
 }
 
-function backToPetugas(){
+async function backToPetugas(){
   if(isRekam)stopRekam();
   showScreen('screen-petugas');
-  renderPasienList();
-  renderRute();
-  updateStatsBeranda();
+  await renderPasienList();
+  await renderRute();
+  await updateStatsBeranda();
 }
 
 function pilihKondisi(warna,el){
   document.querySelectorAll('.kondisi-btn').forEach(b=>b.classList.remove('selected'));
-  el.classList.add('selected');
-  selectedKondisi=warna;
+  el.classList.add('selected'); selectedKondisi=warna;
 }
-function toggleCheck(el){el.classList.toggle('checked');}
+function toggleCheck(el){ el.classList.toggle('checked'); }
 
 function ambilFoto(){
   const input=document.createElement('input');
-  input.type='file';input.accept='image/*';input.capture='environment';
+  input.type='file'; input.accept='image/*'; input.capture='environment';
   input.onchange=(e)=>{
-    const file=e.target.files[0];if(!file)return;
+    const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
     reader.onload=(ev)=>{
       fotoDataUrl=ev.target.result;
@@ -901,15 +1390,14 @@ function ambilFoto(){
   input.click();
 }
 
-function toggleRekamSuara(){if(isRekam){stopRekam();return;}startRekam();}
+function toggleRekamSuara(){ if(isRekam){stopRekam();return;} startRekam(); }
 function startRekam(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){startMediaRecorder();return;}
-  const rec=new SR();
-  rec.lang='id-ID';rec.continuous=true;rec.interimResults=false;
+  const rec=new SR(); rec.lang='id-ID'; rec.continuous=true; rec.interimResults=false;
   rec.onresult=(e)=>{let t='';for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript+' ';document.getElementById('catatanTambahan').value+=t;};
-  rec.onerror=()=>stopRekam();rec.onend=()=>{if(isRekam)stopRekam();};
-  window._srInstance=rec;rec.start();
+  rec.onerror=()=>stopRekam(); rec.onend=()=>{if(isRekam)stopRekam();};
+  window._srInstance=rec; rec.start();
   mulaiTimerRekam();
   document.getElementById('rekamLabel').textContent='Stop';
   document.getElementById('rekamStatus').style.display='flex';
@@ -917,21 +1405,21 @@ function startRekam(){
 }
 function startMediaRecorder(){
   navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-    mediaRecorder=new MediaRecorder(stream);rekamChunks=[];
+    mediaRecorder=new MediaRecorder(stream); rekamChunks=[];
     mediaRecorder.ondataavailable=e=>rekamChunks.push(e.data);
-    mediaRecorder.onstop=()=>{stream.getTracks().forEach(t=>t.stop());showNotifSukses('🎙️ Rekaman tersimpan!');};
-    mediaRecorder.start();mulaiTimerRekam();
+    mediaRecorder.onstop=()=>{stream.getTracks().forEach(t=>t.stop()); showNotifSukses('🎙️ Rekaman tersimpan!');};
+    mediaRecorder.start(); mulaiTimerRekam();
     document.getElementById('rekamLabel').textContent='Stop';
     document.getElementById('rekamStatus').style.display='flex';
     isRekam=true;
   }).catch(()=>alert('Tidak bisa mengakses mikrofon.'));
 }
 function stopRekam(){
-  isRekam=false;clearInterval(rekamTimer);rekamDetik=0;
+  isRekam=false; clearInterval(rekamTimer); rekamDetik=0;
   document.getElementById('rekamStatus').style.display='none';
   document.getElementById('rekamLabel').textContent='Rekam Suara';
-  if(window._srInstance){try{window._srInstance.stop();}catch(e){}window._srInstance=null;}
-  if(mediaRecorder&&mediaRecorder.state!=='inactive')mediaRecorder.stop();
+  if(window._srInstance){try{window._srInstance.stop();}catch(e){} window._srInstance=null;}
+  if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
   showNotifSukses('🎙️ Rekaman selesai!');
 }
 function mulaiTimerRekam(){
@@ -939,36 +1427,35 @@ function mulaiTimerRekam(){
   rekamTimer=setInterval(()=>{
     rekamDetik++;
     document.getElementById('rekamStatusTeks').textContent=`Sedang merekam... (${rekamDetik}s)`;
-    if(rekamDetik>=60)stopRekam();
+    if(rekamDetik>=60) stopRekam();
   },1000);
 }
 
-function kirimDarurat(){
+async function kirimDarurat(){
   if(!currentPasien)return;
-  const darurat=getDarurat();
-  darurat.unshift({nama:currentPasien.nama,alamat:currentPasien.alamat,petugas:currentUser?.id||'?',waktu:new Date().toISOString(),jam:jamSekarang(),tgl:tglISO()});
-  saveDarurat(darurat);
+  const item = {nama:currentPasien.nama,alamat:currentPasien.alamat,petugas:currentUser?.id||'?',waktu:new Date().toISOString(),jam:jamSekarang(),tgl:tglISO()};
+  await addDarurat(item);
   addLog('darurat','KIRIM',`Laporan darurat: ${currentPasien.nama}`,`Alamat: ${currentPasien.alamat}`);
   if('Notification'in window&&Notification.permission==='granted')
     new Notification('🚨 Si Ciput — Laporan Darurat!',{body:`${currentPasien.nama} — ${currentUser?.id}`});
-  const n=document.getElementById('notifDarurat');n.style.display='block';setTimeout(()=>n.style.display='none',3500);
+  const n=document.getElementById('notifDarurat'); n.style.display='block'; setTimeout(()=>n.style.display='none',3500);
 }
 
-function simpanKunjungan(){
+async function simpanKunjungan(){
   if(!selectedKondisi){alert('Pilih kondisi pasien terlebih dahulu!');return;}
   const checklist=[...document.querySelectorAll('.checklist-item.checked')].map(el=>el.querySelector('.check-label').textContent.trim());
   const catatan=document.getElementById('catatanTambahan').value.trim();
   const laporan={
-    id:Date.now(),pasienId:currentPasien.id,namaPasien:currentPasien.nama,
-    kondisi:selectedKondisi,catatan,checklist,
-    petugas:currentUser?.id||'?',tgl:tglISO(),jam:jamSekarang(),
-    waktu:new Date().toISOString(),foto:fotoDataUrl?true:false
+    id:Date.now(), pasienId:currentPasien.id, namaPasien:currentPasien.nama,
+    kondisi:selectedKondisi, catatan, checklist,
+    petugas:currentUser?.id||'?', tgl:tglISO(), jam:jamSekarang(),
+    waktu:new Date().toISOString(), foto:fotoDataUrl?true:false
   };
-  const riwayat=getRiwayat();riwayat.unshift(laporan);saveRiwayat(riwayat);
+  await addRiwayat(laporan);
   const p=dataPasien.find(x=>x.id===currentPasien.id);
-  if(p){p.kondisi=selectedKondisi;saveDataPasien();}
+  if(p){ p.kondisi=selectedKondisi; await saveDataPasien(); }
   addLog('kunjungan','SIMPAN',`Kunjungan: ${currentPasien.nama}`,`Kondisi: ${selectedKondisi.toUpperCase()} | Checklist: ${checklist.join(', ')||'-'} | Catatan: ${catatan.slice(0,80)||'-'}`);
-  if(isRekam)stopRekam();
+  if(isRekam) stopRekam();
   document.getElementById('sukses-nama').textContent=currentPasien.nama;
   document.getElementById('sukses-kondisi').innerHTML=badgeKondisi(selectedKondisi);
   document.getElementById('sukses-waktu').textContent=laporan.jam;
@@ -976,91 +1463,276 @@ function simpanKunjungan(){
   showScreen('screen-sukses');
 }
 
-async function analisisAIDashboard(){
-  const allPasien=dataPasien,riwayat=getRiwayat(),hariIni=tglISO();
-  const kunjHariIni=riwayat.filter(r=>r.tgl===hariIni);
-  const hijau=allPasien.filter(p=>p.kondisi==='hijau').length;
-  const kuning=allPasien.filter(p=>p.kondisi==='kuning').length;
-  const merah=allPasien.filter(p=>p.kondisi==='merah').length;
-  const darurat=getDarurat().filter(d=>d.tgl===hariIni).length;
-  const catatanTerbaru=riwayat.slice(0,5).map(r=>`- ${r.namaPasien} (${r.kondisi}): ${r.catatan||'tidak ada catatan'}`).join('\n');
-  const prompt=`Kamu adalah konsultan program kesehatan komunitas untuk Puskesmas Kecamatan Ciracas.\n\nData CIPUT hari ini (${hariIni}):\n- Total pasien: ${allPasien.length}\n- Stabil: ${hijau}, Perhatian: ${kuning}, Darurat: ${merah}\n- Kunjungan hari ini: ${kunjHariIni.length}/${allPasien.length}\n- Laporan darurat: ${darurat}\n- Cakupan: ${allPasien.length?Math.round(kunjHariIni.length/allPasien.length*100):0}%\n\nCatatan terbaru:\n${catatanTerbaru||'(belum ada)'}\n\nBerikan analisis mencakup:\n1. 📊 Ringkasan kondisi program\n2. ⚠️ Pasien yang perlu perhatian segera\n3. 💡 3 rekomendasi tindakan konkret\n4. 🎯 Target realistis meningkatkan cakupan`;
-  const btn=document.getElementById('btnAIDash'),resultEl=document.getElementById('aiDashResult');
-  if(!btn||!resultEl)return;
-  btn.disabled=true;btn.textContent='⏳ Menganalisis...';
-  resultEl.innerHTML='<div class="ai-loading"><div class="ai-spinner"></div>AI sedang menganalisis...</div>';
-  try{
-    const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
-    const data=await response.json();
-    const teks=data.content?.map(c=>c.text||'').join('\n')||'Tidak ada respons.';
-    resultEl.innerHTML=`<div class="ai-result">${teks.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>`;
-  }catch(err){resultEl.innerHTML='<div style="color:var(--merah);font-size:0.82rem;">⚠️ Gagal menghubungi AI.</div>';}
-  finally{btn.disabled=false;btn.textContent='✨ Analisis Ulang';}
+// =============================================
+// GOOGLE AI STUDIO — GEMINI INTEGRATION
+// =============================================
+
+// Simpan/baca/hapus API Key dari localStorage
+function getAIKey(){ return localStorage.getItem('ciput_gemini_key')||''; }
+function setAIKey(k){ localStorage.setItem('ciput_gemini_key', k); }
+function removeAIKey(){ localStorage.removeItem('ciput_gemini_key'); }
+
+// Update tampilan status bar API Key
+function updateAIKeyUI(){
+  const key = getAIKey();
+  const dot   = document.getElementById('aiKeyDot');
+  const label = document.getElementById('aiKeyLabel');
+  if(!dot || !label) return;
+  if(key){
+    dot.className = 'ai-key-dot aktif';
+    label.textContent = 'API Key aktif ✓';
+    label.style.color = 'var(--hijau)';
+  } else {
+    dot.className = 'ai-key-dot error';
+    label.textContent = 'API Key belum diatur — klik Atur Key';
+    label.style.color = 'var(--teks2)';
+  }
 }
 
+// Buka modal setup API Key
+function bukaModalAISetup(){
+  const key = getAIKey();
+  const inp = document.getElementById('aiKeyInput');
+  if(inp) inp.value = key ? '●'.repeat(32) : '';
+  const errEl = document.getElementById('aiSetupError');
+  if(errEl) errEl.style.display = 'none';
+  document.getElementById('modalAISetup').classList.add('open');
+}
+
+// Toggle tampil/sembunyikan key di input
+function toggleTampilKey(){
+  const inp = document.getElementById('aiKeyInput');
+  const btn = document.getElementById('btnTampilKey');
+  if(!inp) return;
+  if(inp.type === 'password'){
+    // Jika isinya masih placeholder bintang, kosongkan dulu
+    if(inp.value === '●'.repeat(32)) inp.value = getAIKey();
+    inp.type = 'text';
+    btn.textContent = '🙈 Sembunyikan';
+  } else {
+    inp.type = 'password';
+    btn.textContent = '👁 Lihat';
+  }
+}
+
+// Simpan API Key setelah validasi
+function simpanAIKey(){
+  const inp   = document.getElementById('aiKeyInput');
+  const errEl = document.getElementById('aiSetupError');
+  const val   = inp.value.trim();
+  errEl.style.display = 'none';
+  // Jika placeholder bintang tidak diubah, tutup saja
+  if(val === '●'.repeat(32)){
+    tutupModal('modalAISetup');
+    return;
+  }
+  if(!val){
+    errEl.textContent = '⚠️ API Key tidak boleh kosong.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!val.startsWith('AIza')){
+    errEl.textContent = '⚠️ Format tidak valid. API Key Google dimulai dengan "AIza".';
+    errEl.style.display = 'block';
+    return;
+  }
+  setAIKey(val);
+  updateAIKeyUI();
+  tutupModal('modalAISetup');
+  showNotifSukses('🔑 API Key berhasil disimpan!');
+}
+
+// Hapus API Key
+function hapusAIKey(){
+  if(!confirm('Hapus API Key yang tersimpan?')) return;
+  removeAIKey();
+  const inp = document.getElementById('aiKeyInput');
+  if(inp){ inp.value = ''; inp.type = 'password'; }
+  const btn = document.getElementById('btnTampilKey');
+  if(btn) btn.textContent = '👁 Lihat';
+  updateAIKeyUI();
+  tutupModal('modalAISetup');
+  showNotifSukses('🗑️ API Key dihapus.');
+}
+
+// Fungsi analisis utama — menggunakan Gemini 2.0 Flash
+async function analisisAIDashboard(){
+  const key = getAIKey();
+  // Jika belum ada key, buka modal setup otomatis
+  if(!key){
+    bukaModalAISetup();
+    return;
+  }
+  const allPasien = dataPasien;
+  const riwayat   = await getRiwayat();
+  const hariIni   = tglISO();
+  const kunjHariIni = riwayat.filter(r => r.tgl === hariIni);
+  const hijau  = allPasien.filter(p => p.kondisi === 'hijau').length;
+  const kuning = allPasien.filter(p => p.kondisi === 'kuning').length;
+  const merah  = allPasien.filter(p => p.kondisi === 'merah').length;
+  const darurat = (await getDarurat()).filter(d => d.tgl === hariIni).length;
+  const catatanTerbaru = riwayat.slice(0,5)
+    .map(r => `- ${r.namaPasien} (${r.kondisi}): ${r.catatan||'tidak ada catatan'}`)
+    .join('\n');
+  const cakupan = allPasien.length
+    ? Math.round(kunjHariIni.length / allPasien.length * 100) : 0;
+
+  const prompt = `Kamu adalah konsultan program kesehatan komunitas untuk Puskesmas Kecamatan Ciracas.
+
+Data program CIPUT hari ini (${hariIni}):
+- Total pasien binaan: ${allPasien.length}
+- Kondisi stabil (hijau): ${hijau} pasien
+- Kondisi perlu perhatian (kuning): ${kuning} pasien
+- Kondisi darurat (merah): ${merah} pasien
+- Kunjungan hari ini: ${kunjHariIni.length} dari ${allPasien.length} pasien (${cakupan}%)
+- Laporan darurat masuk: ${darurat}
+
+Catatan kunjungan terbaru:
+${catatanTerbaru||'(belum ada catatan hari ini)'}
+
+Berikan analisis singkat dan praktis dalam Bahasa Indonesia mencakup:
+1. 📊 Ringkasan kondisi program hari ini
+2. ⚠️ Pasien atau situasi yang perlu perhatian segera
+3. 💡 3 rekomendasi tindakan konkret untuk petugas lapangan
+4. 🎯 Target realistis untuk meningkatkan cakupan kunjungan
+
+Gunakan bahasa yang mudah dipahami petugas puskesmas non-medis.`;
+
+  const btn      = document.getElementById('btnAIDash');
+  const resultEl = document.getElementById('aiDashResult');
+  if(!btn || !resultEl) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Menganalisis...';
+  resultEl.innerHTML = '<div class="ai-loading"><div class="ai-spinner"></div>Gemini sedang menganalisis data...</div>';
+
+  try {
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+    const resp = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: 1024,
+          temperature: 0.4
+        }
+      })
+    });
+
+    const data = await resp.json();
+
+    // Tangani error dari Google API
+    if(data.error){
+      const kode  = data.error.code;
+      const pesan = data.error.message || '';
+      if(kode === 400 || pesan.toLowerCase().includes('api_key') || pesan.toLowerCase().includes('api key')){
+        resultEl.innerHTML = '<div style="color:var(--merah);font-size:0.82rem;">⚠️ API Key tidak valid. Klik <strong>⚙️ Atur Key</strong> untuk memperbarui.</div>';
+      } else if(kode === 429){
+        resultEl.innerHTML = '<div style="color:var(--kuning);font-size:0.82rem;">⏳ Terlalu banyak permintaan ke Google. Tunggu 1 menit lalu coba lagi.</div>';
+      } else if(kode === 403){
+        resultEl.innerHTML = '<div style="color:var(--merah);font-size:0.82rem;">⚠️ Akses ditolak. Pastikan Gemini API sudah diaktifkan di Google AI Studio.</div>';
+      } else {
+        resultEl.innerHTML = `<div style="color:var(--merah);font-size:0.82rem;">⚠️ Error Google (${kode}): ${esc(pesan)}</div>`;
+      }
+      return;
+    }
+
+    // Ambil teks hasil
+    const teks = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Tidak ada respons dari AI.';
+
+    // Render: escape HTML, render **bold**, render baris baru
+    const formatted = teks
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\n/g,'<br>');
+
+    resultEl.innerHTML = `<div class="ai-result">${formatted}</div>`;
+
+  } catch(err){
+    resultEl.innerHTML = '<div style="color:var(--merah);font-size:0.82rem;">⚠️ Gagal terhubung ke Google AI. Periksa koneksi internet Anda.</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Analisis Ulang';
+  }
+}
+
+// =============================================
+// EDUKASI
+// =============================================
 function showEdukasi(key){
   const d=edukasiData[key];
   document.getElementById('edukasi-judul').textContent=d.judul;
   document.getElementById('edukasi-isi').textContent=d.isi;
   document.getElementById('modalEdukasi').classList.add('open');
 }
-function tutupModal(id){document.getElementById(id).classList.remove('open');}
+function tutupModal(id){ document.getElementById(id).classList.remove('open'); }
 
+// =============================================
+// INSTRUKSI
+// =============================================
 let tlNamaCurrent='';
 function tindakLanjut(nama){
-  tlNamaCurrent=nama;document.getElementById('tl-nama').textContent=nama;document.getElementById('tlInstruksi').value='';
+  tlNamaCurrent=nama; document.getElementById('tl-nama').textContent=nama; document.getElementById('tlInstruksi').value='';
   const sel=document.getElementById('tlPetugas');
   sel.innerHTML='<option value="">Semua Petugas</option>'+allPetugasList().map(p=>`<option value="${p.id}">${p.id} — ${esc(p.nama)}</option>`).join('');
   document.getElementById('modalTindakLanjut').classList.add('open');
 }
-function konfirmasiTL(){
+async function konfirmasiTL(){
   const instruksi=document.getElementById('tlInstruksi').value.trim();
   if(!instruksi){alert('Isi instruksi terlebih dahulu.');return;}
   const tp=document.getElementById('tlPetugas').value;
   addLog('instruksi','KIRIM',`Instruksi TL: ${tlNamaCurrent}`,`Target: ${tp||'Semua'}`);
-  tutupModal('modalTindakLanjut');simpanInstruksi(tlNamaCurrent,instruksi,tp);
+  tutupModal('modalTindakLanjut');
+  await simpanInstruksi(tlNamaCurrent,instruksi,tp);
 }
 
 let kiNamaCurrent='';
 function bukaKirimInstruksi(namaPasien){
-  kiNamaCurrent=namaPasien;document.getElementById('kiInstruksiNama').textContent=namaPasien;document.getElementById('kiTeks').value='';
+  kiNamaCurrent=namaPasien; document.getElementById('kiInstruksiNama').textContent=namaPasien; document.getElementById('kiTeks').value='';
   const sel=document.getElementById('kiPetugas');
   sel.innerHTML='<option value="">Semua Petugas</option>'+allPetugasList().map(p=>`<option value="${p.id}">${p.id} — ${esc(p.nama)}</option>`).join('');
   document.getElementById('modalKirimInstruksi').classList.add('open');
 }
-function kirimInstruksiDariLaporan(){
+async function kirimInstruksiDariLaporan(){
   const teks=document.getElementById('kiTeks').value.trim();
   if(!teks){alert('Isi instruksi terlebih dahulu.');return;}
   const target=document.getElementById('kiPetugas').value;
   addLog('instruksi','KIRIM',`Instruksi: ${kiNamaCurrent}`,`Target: ${target||'Semua'}`);
-  tutupModal('modalKirimInstruksi');simpanInstruksi(kiNamaCurrent,teks,target);
+  tutupModal('modalKirimInstruksi');
+  await simpanInstruksi(kiNamaCurrent,teks,target);
 }
-function simpanInstruksi(namaPasien,instruksi,targetPetugas){
-  const list=getInstruksi();
-  list.unshift({id:Date.now(),namaPasien,nama:namaPasien,instruksi,targetPetugas,waktu:new Date().toISOString(),tgl:tglISO(),jam:jamSekarang(),dibaca:false});
-  saveInstruksi(list);showNotifSukses('📨 Instruksi terkirim!');
+async function simpanInstruksi(namaPasien,instruksi,targetPetugas){
+  const item={id:Date.now(),namaPasien,nama:namaPasien,instruksi,targetPetugas,waktu:new Date().toISOString(),tgl:tglISO(),jam:jamSekarang(),dibaca:false};
+  await saveInstruksiItem(item);
+  showNotifSukses('📨 Instruksi terkirim!');
 }
 
+// =============================================
+// DASHBOARD PUSKESMAS
+// =============================================
 function switchDashTab(name,btn){
   document.querySelectorAll('.dash-panel').forEach(p=>p.classList.remove('active'));
-  const panel=document.getElementById('dashpanel-'+name);if(panel)panel.classList.add('active');
-  document.querySelectorAll('.dash-tab-btn').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');
-  if(name==='pasien')renderMgmtPasien();
-  if(name==='petugas')renderMgmtPetugas();
-  if(name==='laporan'){renderSemuaLaporan();populateFilterLaporan();}
-  if(name==='logger')renderLogger();
-  if(name==='ringkasan')renderDashboard();
+  const panel=document.getElementById('dashpanel-'+name); if(panel) panel.classList.add('active');
+  document.querySelectorAll('.dash-tab-btn').forEach(b=>b.classList.remove('active')); if(btn) btn.classList.add('active');
+  if(name==='pasien') renderMgmtPasien();
+  if(name==='petugas') renderMgmtPetugas();
+  if(name==='laporan'){renderSemuaLaporan(); populateFilterLaporan();}
+  if(name==='logger') renderLogger();
+  if(name==='ringkasan') renderDashboard();
 }
 
-function renderDashboard(){
-  const allPasien=dataPasien,riwayat=getRiwayat(),darurat=getDarurat(),hariIni=tglISO();
+async function renderDashboard(){
+  const allPasien=dataPasien, riwayat=await getRiwayat(), darurat=await getDarurat(), hariIni=tglISO();
   const kunjunganHariIni=riwayat.filter(r=>r.tgl===hariIni);
-  const total=allPasien.length,hijau=allPasien.filter(p=>p.kondisi==='hijau').length;
-  const kuning=allPasien.filter(p=>p.kondisi==='kuning').length,merah=allPasien.filter(p=>p.kondisi==='merah').length;
+  const total=allPasien.length, hijau=allPasien.filter(p=>p.kondisi==='hijau').length;
+  const kuning=allPasien.filter(p=>p.kondisi==='kuning').length, merah=allPasien.filter(p=>p.kondisi==='merah').length;
   const cakupan=total?Math.round(kunjunganHariIni.length/total*100):0;
-  document.getElementById('dashTotal').textContent=total;document.getElementById('dashKunjungan').textContent=kunjunganHariIni.length;
-  document.getElementById('dashHijau').textContent=hijau;document.getElementById('dashKuning').textContent=kuning;
-  document.getElementById('dashMerah').textContent=merah;document.getElementById('dashCakupan').textContent=cakupan+'%';
+  document.getElementById('dashTotal').textContent=total; document.getElementById('dashKunjungan').textContent=kunjunganHariIni.length;
+  document.getElementById('dashHijau').textContent=hijau; document.getElementById('dashKuning').textContent=kuning;
+  document.getElementById('dashMerah').textContent=merah; document.getElementById('dashCakupan').textContent=cakupan+'%';
   const alertEl=document.getElementById('alertDaruratList');
   const daruratHariIni=darurat.filter(d=>d.tgl===hariIni);
   alertEl.innerHTML=!daruratHariIni.length
@@ -1070,7 +1742,7 @@ function renderDashboard(){
   document.getElementById('laporanTerbaru').innerHTML=!recent.length
     ?'<div class="no-data">Belum ada laporan.</div>'
     :recent.map(r=>`<div class="riwayat-item ${r.kondisi}" style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:0.88rem;">${esc(r.namaPasien)}</span>${badgeKondisi(r.kondisi)}</div><div style="font-size:0.75rem;color:var(--abu3);">👤 ${r.petugas} · 📅 ${r.tgl} ⏰ ${r.jam}</div>${r.catatan?`<div style="font-size:0.82rem;color:var(--teks2);margin-top:3px;font-style:italic;">"${esc(r.catatan).slice(0,80)}"</div>`:''}<div style="margin-top:6px;"><button class="btn-edit-kecil" onclick="bukaKirimInstruksi('${esc(r.namaPasien)}')">📨 Instruksi</button></div></div>`).join('');
-  const totalPw=allPetugasList().length,pwYangLapor=new Set(kunjunganHariIni.map(r=>r.petugas)).size;
+  const totalPw=allPetugasList().length, pwYangLapor=new Set(kunjunganHariIni.map(r=>r.petugas)).size;
   document.getElementById('indikatorList').innerHTML=[
     {label:'Pasien Terdaftar',val:total,max:Math.max(total,50),color:'var(--biru)'},
     {label:'Kunjungan Hari Ini',val:kunjunganHariIni.length,max:total||1,color:'var(--hijau)'},
@@ -1083,196 +1755,315 @@ function renderMgmtPasien(query=''){
   const list=dataPasien.filter(p=>!query||p.nama.toLowerCase().includes(query.toLowerCase()));
   const el=document.getElementById('mgmtPasienList');
   if(!list.length){el.innerHTML='<div class="no-data">Tidak ada pasien.</div>';return;}
-  el.innerHTML=list.map(p=>{const pt=usersData[p.pw];return `<div class="mgmt-card"><div class="mgmt-avatar" style="background:${p.kondisi==='hijau'?'var(--hijau-bg)':p.kondisi==='kuning'?'var(--kuning-bg)':'var(--merah-bg)'}">${p.kondisi==='hijau'?'🟢':p.kondisi==='kuning'?'🟡':'🔴'}</div><div class="mgmt-info"><div class="mgmt-nama">${esc(p.nama)}</div><div class="mgmt-sub">📍 ${esc(p.alamat)}</div><div class="mgmt-sub">🏷️ ${esc(p.kategori)} · 👤 ${p.pw}${pt?' — '+esc(pt.nama):''}</div></div><div class="mgmt-actions"><button class="btn-icon edit" onclick="bukaEditPasien(${p.id})">✏️</button><button class="btn-icon del" onclick="hapusPasien(${p.id})">🗑️</button></div></div>`;}).join('');
+  el.innerHTML=list.map(p=>{const pt=usersData[p.pw]; return `<div class="mgmt-card"><div class="mgmt-avatar" style="background:${p.kondisi==='hijau'?'var(--hijau-bg)':p.kondisi==='kuning'?'var(--kuning-bg)':'var(--merah-bg)'}">${p.kondisi==='hijau'?'🟢':p.kondisi==='kuning'?'🟡':'🔴'}</div><div class="mgmt-info"><div class="mgmt-nama">${esc(p.nama)}</div><div class="mgmt-sub">📍 ${esc(p.alamat)}</div><div class="mgmt-sub">🏷️ ${esc(p.kategori)} · 👤 ${p.pw}${pt?' — '+esc(pt.nama):''}</div></div><div class="mgmt-actions"><button class="btn-icon edit" onclick="bukaEditPasien(${p.id})">✏️</button><button class="btn-icon del" onclick="hapusPasien(${p.id})">🗑️</button></div></div>`;}).join('');
 }
-function filterDashPasien(q){renderMgmtPasien(q);}
+function filterDashPasien(q){ renderMgmtPasien(q); }
 
 function bukaModalTambahPasien(){
   document.getElementById('modalPasienTitle').textContent='➕ Tambah Pasien Baru';
-  document.getElementById('editPasienId').value='';['fpNama','fpAlamat','fpKategori','fpLat','fpLng'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('fpJadwal').value='09:00';document.getElementById('fpKondisi').value='hijau';
+  document.getElementById('editPasienId').value=''; ['fpNama','fpAlamat','fpKategori','fpLat','fpLng'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fpJadwal').value='09:00'; document.getElementById('fpKondisi').value='hijau';
   document.getElementById('fpError').style.display='none';
-  const sel=document.getElementById('fpPetugas');sel.innerHTML=allPetugasList().map(p=>`<option value="${p.id}">${p.id} — ${esc(p.nama)}</option>`).join('');
+  const sel=document.getElementById('fpPetugas'); sel.innerHTML=allPetugasList().map(p=>`<option value="${p.id}">${p.id} — ${esc(p.nama)}</option>`).join('');
   document.getElementById('modalPasien').classList.add('open');
 }
 function bukaEditPasien(id){
-  const p=dataPasien.find(x=>x.id===id);if(!p)return;
+  const p=dataPasien.find(x=>x.id===id); if(!p)return;
   document.getElementById('modalPasienTitle').textContent='✏️ Edit Data Pasien';
-  document.getElementById('editPasienId').value=id;document.getElementById('fpNama').value=p.nama;
-  document.getElementById('fpAlamat').value=p.alamat;document.getElementById('fpKategori').value=p.kategori;
-  document.getElementById('fpJadwal').value=p.jadwal;document.getElementById('fpKondisi').value=p.kondisi;
-  document.getElementById('fpLat').value=p.lat||'';document.getElementById('fpLng').value=p.lng||'';
+  document.getElementById('editPasienId').value=id; document.getElementById('fpNama').value=p.nama;
+  document.getElementById('fpAlamat').value=p.alamat; document.getElementById('fpKategori').value=p.kategori;
+  document.getElementById('fpJadwal').value=p.jadwal; document.getElementById('fpKondisi').value=p.kondisi;
+  document.getElementById('fpLat').value=p.lat||''; document.getElementById('fpLng').value=p.lng||'';
   document.getElementById('fpError').style.display='none';
-  const sel=document.getElementById('fpPetugas');sel.innerHTML=allPetugasList().map(pt=>`<option value="${pt.id}"${pt.id===p.pw?' selected':''}>${pt.id} — ${esc(pt.nama)}</option>`).join('');
+  const sel=document.getElementById('fpPetugas'); sel.innerHTML=allPetugasList().map(pt=>`<option value="${pt.id}"${pt.id===p.pw?' selected':''}>${pt.id} — ${esc(pt.nama)}</option>`).join('');
   document.getElementById('modalPasien').classList.add('open');
 }
-function simpanPasien(){
-  const nama=document.getElementById('fpNama').value.trim(),alamat=document.getElementById('fpAlamat').value.trim();
-  const kategori=document.getElementById('fpKategori').value.trim(),jadwal=document.getElementById('fpJadwal').value;
-  const kondisi=document.getElementById('fpKondisi').value,pw=document.getElementById('fpPetugas').value;
-  const lat=parseFloat(document.getElementById('fpLat').value)||-6.3500,lng=parseFloat(document.getElementById('fpLng').value)||106.8720;
+async function simpanPasien(){
+  const nama=document.getElementById('fpNama').value.trim(), alamat=document.getElementById('fpAlamat').value.trim();
+  const kategori=document.getElementById('fpKategori').value.trim(), jadwal=document.getElementById('fpJadwal').value;
+  const kondisi=document.getElementById('fpKondisi').value, pw=document.getElementById('fpPetugas').value;
+  const lat=parseFloat(document.getElementById('fpLat').value)||-6.3500, lng=parseFloat(document.getElementById('fpLng').value)||106.8720;
   const errEl=document.getElementById('fpError');
-  if(!nama||!alamat||!kategori||!pw){errEl.textContent='⚠️ Nama, alamat, kategori, dan petugas wajib diisi.';errEl.style.display='block';return;}
+  if(!nama||!alamat||!kategori||!pw){errEl.textContent='⚠️ Nama, alamat, kategori, dan petugas wajib diisi.'; errEl.style.display='block'; return;}
   const editId=document.getElementById('editPasienId').value;
-  if(editId){const p=dataPasien.find(x=>x.id==editId);if(p){p.nama=nama;p.alamat=alamat;p.kategori=kategori;p.jadwal=jadwal;p.kondisi=kondisi;p.pw=pw;p.lat=lat;p.lng=lng;}
-    addLog('pasien','EDIT',`Edit pasien: ${nama}`,`Petugas: ${pw}`);}
-  else{dataPasien.push({id:Math.max(0,...dataPasien.map(x=>x.id))+1,nama,alamat,kategori,kondisi,pw,jadwal,lat,lng});
-    addLog('pasien','TAMBAH',`Tambah pasien: ${nama}`,`Petugas: ${pw}`);}
-  saveDataPasien();tutupModal('modalPasien');renderMgmtPasien();renderDashboard();
+  if(editId){
+    const p=dataPasien.find(x=>x.id==editId);
+    if(p){p.nama=nama;p.alamat=alamat;p.kategori=kategori;p.jadwal=jadwal;p.kondisi=kondisi;p.pw=pw;p.lat=lat;p.lng=lng;}
+    addLog('pasien','EDIT',`Edit pasien: ${nama}`,`Petugas: ${pw}`);
+  } else {
+    dataPasien.push({id:Math.max(0,...dataPasien.map(x=>x.id))+1,nama,alamat,kategori,kondisi,pw,jadwal,lat,lng});
+    addLog('pasien','TAMBAH',`Tambah pasien: ${nama}`,`Petugas: ${pw}`);
+  }
+  await saveDataPasien(); tutupModal('modalPasien'); renderMgmtPasien(); renderDashboard();
   showNotifSukses(editId?'✅ Data pasien diperbarui!':'✅ Pasien baru ditambahkan!');
 }
-function hapusPasien(id){
-  const p=dataPasien.find(x=>x.id===id);if(!p)return;
+async function hapusPasien(id){
+  const p=dataPasien.find(x=>x.id===id); if(!p)return;
   if(!confirm(`Hapus pasien "${p.nama}"?`))return;
   addLog('pasien','HAPUS',`Hapus pasien: ${p.nama}`,`ID: ${id}`);
-  dataPasien=dataPasien.filter(x=>x.id!==id);saveDataPasien();renderMgmtPasien();renderDashboard();showNotifSukses('🗑️ Pasien dihapus.');
+  await deletePasienFromDB(id); renderMgmtPasien(); renderDashboard(); showNotifSukses('🗑️ Pasien dihapus.');
 }
 
 function renderMgmtPetugas(){
-  const list=allPetugasList();const el=document.getElementById('mgmtPetugasList');
+  const list=allPetugasList(); const el=document.getElementById('mgmtPetugasList');
   if(!list.length){el.innerHTML='<div class="no-data">Belum ada petugas.</div>';return;}
-  el.innerHTML=list.map(p=>{
-    const jmlP=dataPasien.filter(x=>x.pw===p.id).length,jmlK=getRiwayat().filter(r=>r.petugas===p.id).length;
-    return `<div class="mgmt-card"><div class="mgmt-avatar">${p.emoji||'👤'}</div><div class="mgmt-info"><div class="mgmt-nama">${esc(p.nama)}</div><div class="mgmt-sub">🪪 ${p.id} · 📍 ${esc(p.wilayah)}</div><div class="mgmt-sub">🏥 ${jmlP} pasien · 📋 ${jmlK} laporan</div></div><div class="mgmt-actions"><button class="btn-icon edit" onclick="bukaEditPetugas('${p.id}')">✏️</button><button class="btn-icon del" onclick="hapusPetugas('${p.id}')">🗑️</button></div></div>`;
-  }).join('');
+  getRiwayat().then(allRiwayat => {
+    el.innerHTML=list.map(p=>{
+      const jmlP=dataPasien.filter(x=>x.pw===p.id).length, jmlK=allRiwayat.filter(r=>r.petugas===p.id).length;
+      return `<div class="mgmt-card"><div class="mgmt-avatar">${p.emoji||'👤'}</div><div class="mgmt-info"><div class="mgmt-nama">${esc(p.nama)}</div><div class="mgmt-sub">🪪 ${p.id} · 📍 ${esc(p.wilayah)}</div><div class="mgmt-sub">🏥 ${jmlP} pasien · 📋 ${jmlK} laporan</div></div><div class="mgmt-actions"><button class="btn-icon edit" onclick="bukaEditPetugas('${p.id}')">✏️</button><button class="btn-icon del" onclick="hapusPetugas('${p.id}')">🗑️</button></div></div>`;
+    }).join('');
+  });
 }
 function bukaModalTambahPetugas(){
   document.getElementById('modalPetugasTitle').textContent='➕ Tambah Petugas Baru';
-  document.getElementById('editPetugasId').value='';document.getElementById('ptNama').value='';
-  document.getElementById('ptId').value='';document.getElementById('ptPw').value='ciput123';
-  document.getElementById('ptWilayah').value='RW 01';document.getElementById('ptEmoji').value='👩';
-  document.getElementById('ptId').disabled=false;document.getElementById('ptError').style.display='none';
+  document.getElementById('editPetugasId').value=''; document.getElementById('ptNama').value='';
+  document.getElementById('ptId').value=''; document.getElementById('ptPw').value='ciput123';
+  document.getElementById('ptWilayah').value='RW 01'; document.getElementById('ptEmoji').value='👩';
+  document.getElementById('ptId').disabled=false; document.getElementById('ptError').style.display='none';
   document.getElementById('modalPetugas').classList.add('open');
 }
 function bukaEditPetugas(id){
-  const u=usersData[id];if(!u)return;
+  const u=usersData[id]; if(!u)return;
   document.getElementById('modalPetugasTitle').textContent='✏️ Edit Data Petugas';
-  document.getElementById('editPetugasId').value=id;document.getElementById('ptNama').value=u.nama;
-  document.getElementById('ptId').value=id;document.getElementById('ptId').disabled=true;
-  document.getElementById('ptPw').value=u.password;document.getElementById('ptWilayah').value=u.wilayah;
-  document.getElementById('ptEmoji').value=u.emoji||'👩';document.getElementById('ptError').style.display='none';
+  document.getElementById('editPetugasId').value=id; document.getElementById('ptNama').value=u.nama;
+  document.getElementById('ptId').value=id; document.getElementById('ptId').disabled=true;
+  document.getElementById('ptPw').value=u.password; document.getElementById('ptWilayah').value=u.wilayah;
+  document.getElementById('ptEmoji').value=u.emoji||'👩'; document.getElementById('ptError').style.display='none';
   document.getElementById('modalPetugas').classList.add('open');
 }
-function simpanPetugas(){
-  const nama=document.getElementById('ptNama').value.trim(),id=document.getElementById('ptId').value.trim().toUpperCase();
-  const pw=document.getElementById('ptPw').value.trim(),wilayah=document.getElementById('ptWilayah').value;
-  const emoji=document.getElementById('ptEmoji').value,editId=document.getElementById('editPetugasId').value;
+async function simpanPetugas(){
+  const nama=document.getElementById('ptNama').value.trim(), id=document.getElementById('ptId').value.trim().toUpperCase();
+  const pw=document.getElementById('ptPw').value.trim(), wilayah=document.getElementById('ptWilayah').value;
+  const emoji=document.getElementById('ptEmoji').value, editId=document.getElementById('editPetugasId').value;
   const errEl=document.getElementById('ptError');
-  if(!nama||!id||!pw){errEl.textContent='⚠️ Nama, ID, dan password wajib diisi.';errEl.style.display='block';return;}
-  if(!editId&&usersData[id]){errEl.textContent=`⚠️ ID "${id}" sudah digunakan.`;errEl.style.display='block';return;}
-  if(!editId){usersData[id]={password:pw,role:'petugas',nama,emoji,wilayah};addLog('petugas','TAMBAH',`Tambah: ${nama}`,`ID: ${id}`);}
-  else{usersData[editId]={...usersData[editId],nama,password:pw,wilayah,emoji};addLog('petugas','EDIT',`Edit: ${nama}`,`ID: ${editId}`);}
-  saveUsers();tutupModal('modalPetugas');renderMgmtPetugas();showNotifSukses(editId?'✅ Petugas diperbarui!':'✅ Petugas ditambahkan!');
+  if(!nama||!id||!pw){errEl.textContent='⚠️ Nama, ID, dan password wajib diisi.'; errEl.style.display='block'; return;}
+  if(!editId&&usersData[id]){errEl.textContent=`⚠️ ID "${id}" sudah digunakan.`; errEl.style.display='block'; return;}
+  if(!editId){ usersData[id]={password:pw,role:'petugas',nama,emoji,wilayah}; addLog('petugas','TAMBAH',`Tambah: ${nama}`,`ID: ${id}`); }
+  else { usersData[editId]={...usersData[editId],nama,password:pw,wilayah,emoji}; addLog('petugas','EDIT',`Edit: ${nama}`,`ID: ${editId}`); }
+  await saveUsers(); tutupModal('modalPetugas'); renderMgmtPetugas(); showNotifSukses(editId?'✅ Petugas diperbarui!':'✅ Petugas ditambahkan!');
 }
-function hapusPetugas(id){
+async function hapusPetugas(id){
   if(id==='admin'){alert('Akun admin tidak dapat dihapus.');return;}
-  const u=usersData[id];if(!u)return;
+  const u=usersData[id]; if(!u)return;
   const jml=dataPasien.filter(p=>p.pw===id).length;
   if(!confirm(`Hapus petugas "${u.nama}"${jml>0?` (${jml} pasien binaan)`:''}?`))return;
   addLog('petugas','HAPUS',`Hapus: ${u.nama}`,`ID: ${id}`);
-  delete usersData[id];saveUsers();renderMgmtPetugas();showNotifSukses('🗑️ Petugas dihapus.');
+  await deleteUser(id); renderMgmtPetugas(); showNotifSukses('🗑️ Petugas dihapus.');
 }
 
-function bukaEditLaporan(laporanId){
-  const r=getRiwayat().find(x=>x.id===laporanId);if(!r)return;
-  document.getElementById('editLaporanId').value=laporanId;document.getElementById('editLaporanNama').textContent=r.namaPasien;
-  document.getElementById('editLaporanWaktu').textContent=`${r.tgl} ${r.jam}`;document.getElementById('elKondisi').value=r.kondisi;
-  document.getElementById('elCatatan').value=r.catatan||'';document.getElementById('elChecklist').value=r.checklist?.join(', ')||'';
-  document.getElementById('elError').style.display='none';document.getElementById('modalEditLaporan').classList.add('open');
+// =============================================
+// LAPORAN MANAGEMENT
+// =============================================
+async function bukaEditLaporan(laporanId){
+  const riwayat = await getRiwayat();
+  const r=riwayat.find(x=>x.id===laporanId); if(!r)return;
+  document.getElementById('editLaporanId').value=laporanId; document.getElementById('editLaporanNama').textContent=r.namaPasien;
+  document.getElementById('editLaporanWaktu').textContent=`${r.tgl} ${r.jam}`; document.getElementById('elKondisi').value=r.kondisi;
+  document.getElementById('elCatatan').value=r.catatan||''; document.getElementById('elChecklist').value=r.checklist?.join(', ')||'';
+  document.getElementById('elError').style.display='none'; document.getElementById('modalEditLaporan').classList.add('open');
 }
-function simpanEditLaporan(){
+async function simpanEditLaporan(){
   const id=parseInt(document.getElementById('editLaporanId').value);
-  const kondisi=document.getElementById('elKondisi').value,catatan=document.getElementById('elCatatan').value.trim();
+  const kondisi=document.getElementById('elKondisi').value, catatan=document.getElementById('elCatatan').value.trim();
   const checkRaw=document.getElementById('elChecklist').value.trim();
   const checklist=checkRaw?checkRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
   const nama=document.getElementById('editLaporanNama').textContent;
-  let riwayat=getRiwayat();const idx=riwayat.findIndex(x=>x.id===id);
-  if(idx===-1){document.getElementById('elError').textContent='⚠️ Laporan tidak ditemukan.';document.getElementById('elError').style.display='block';return;}
-  riwayat[idx]={...riwayat[idx],kondisi,catatan,checklist,diubah:jamSekarang()};
-  saveRiwayat(riwayat);
-  const p=dataPasien.find(x=>x.id===riwayat[idx].pasienId);if(p){p.kondisi=kondisi;saveDataPasien();}
+  await updateRiwayat(id, {kondisi,catatan,checklist,diubah:jamSekarang()});
+  const riwayat = await getRiwayat();
+  const updated = riwayat.find(x=>x.id===id);
+  if(updated){ const p=dataPasien.find(x=>x.id===updated.pasienId); if(p){p.kondisi=kondisi; await saveDataPasien();} }
   addLog('kunjungan','EDIT',`Edit laporan: ${nama}`,`Kondisi baru: ${kondisi}`);
-  tutupModal('modalEditLaporan');renderRiwayat();updateStatsBeranda();renderPasienList();showNotifSukses('✅ Laporan diperbarui!');
+  tutupModal('modalEditLaporan'); await renderRiwayat(); await updateStatsBeranda(); await renderPasienList();
+  showNotifSukses('✅ Laporan diperbarui!');
 }
-function hapusLaporan(laporanId){
+async function hapusLaporan(laporanId){
   if(!confirm('Hapus laporan ini?'))return;
-  let riwayat=getRiwayat();const r=riwayat.find(x=>x.id===laporanId);
-  if(r)addLog('kunjungan','HAPUS',`Hapus laporan: ${r.namaPasien}`,`Tgl: ${r.tgl}`);
-  saveRiwayat(riwayat.filter(x=>x.id!==laporanId));renderRiwayat();updateStatsBeranda();showNotifSukses('🗑️ Laporan dihapus.');
+  const riwayat = await getRiwayat();
+  const r=riwayat.find(x=>x.id===laporanId);
+  if(r) addLog('kunjungan','HAPUS',`Hapus laporan: ${r.namaPasien}`,`Tgl: ${r.tgl}`);
+  await deleteRiwayat(laporanId); await renderRiwayat(); await updateStatsBeranda(); showNotifSukses('🗑️ Laporan dihapus.');
 }
 
-function populateFilterLaporan(){
-  const sel=document.getElementById('filterLaporanPetugas'),cur=sel.value;
+async function populateFilterLaporan(){
+  const sel=document.getElementById('filterLaporanPetugas'), cur=sel.value;
+  await loadUsers();
   sel.innerHTML='<option value="">Semua Petugas</option>'+allPetugasList().map(p=>`<option value="${p.id}"${p.id===cur?' selected':''}>${p.id} — ${esc(p.nama)}</option>`).join('');
 }
-function renderSemuaLaporan(){
-  const fP=document.getElementById('filterLaporanPetugas').value,fK=document.getElementById('filterLaporanKondisi').value;
-  let list=getRiwayat();if(fP)list=list.filter(r=>r.petugas===fP);if(fK)list=list.filter(r=>r.kondisi===fK);
+async function renderSemuaLaporan(){
+  const fP=document.getElementById('filterLaporanPetugas').value, fK=document.getElementById('filterLaporanKondisi').value;
+  let list=await getRiwayat(); if(fP)list=list.filter(r=>r.petugas===fP); if(fK)list=list.filter(r=>r.kondisi===fK);
   const el=document.getElementById('semuaLaporanList');
   if(!list.length){el.innerHTML='<div class="no-data">Tidak ada laporan.</div>';return;}
   el.innerHTML=list.map(r=>`<div class="riwayat-item ${r.kondisi}" style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:0.9rem;">${esc(r.namaPasien)}</span>${badgeKondisi(r.kondisi)}</div><div style="font-size:0.75rem;color:var(--abu3);">👤 <span class="badge-pw">${r.petugas}</span> · 📅 ${r.tgl} ⏰ ${r.jam}${r.diubah?` <em>(diubah ${r.diubah})</em>`:''}</div>${r.catatan?`<div style="font-size:0.82rem;color:var(--teks2);margin-top:4px;font-style:italic;">"${esc(r.catatan).slice(0,100)}"</div>`:''} ${r.checklist?.length?`<div style="font-size:0.75rem;color:var(--hijau);margin-top:3px;">✓ ${r.checklist.join(', ')}</div>`:''}<div style="margin-top:8px;"><button class="btn-edit-kecil" onclick="bukaKirimInstruksi('${esc(r.namaPasien)}')">📨 Instruksi</button></div></div>`).join('');
 }
 
-// DATA LOGGER
-function getLog(){return getStorage('actlog',[]);}
-function saveLog(arr){if(arr.length>2000)arr=arr.slice(0,2000);setStorage('actlog',arr);}
-function addLog(kategori,aksi,subjek,detail='',user=null){
-  const log=getLog();
-  log.unshift({id:Date.now()+Math.random(),ts:new Date().toISOString(),tgl:tglISO(),jam:jamSekarang(),user:user||currentUser?.id||'system',kategori,aksi,subjek:String(subjek||'').slice(0,120),detail:String(detail||'').slice(0,300)});
-  saveLog(log);
+// =============================================
+// ACTIVITY LOG
+// =============================================
+async function addLog(kategori,aksi,subjek,detail='',user=null){
+  const entry={id:Date.now()+Math.random(),ts:new Date().toISOString(),tgl:tglISO(),jam:jamSekarang(),user:user||currentUser?.id||'system',kategori,aksi,subjek:String(subjek||'').slice(0,120),detail:String(detail||'').slice(0,300)};
+  await addLogEntry(entry);
 }
-let logPage=0;const LOG_PAGE_SIZE=25;let logKategoriFilter='';
-function setLogKategori(kat,btn){logKategoriFilter=kat;logPage=0;document.querySelectorAll('.log-tab-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderLogger();}
-function getLogFiltered(){
-  const tgl=document.getElementById('logFilterTgl')?.value||'',cari=(document.getElementById('logFilterCari')?.value||'').toLowerCase(),user=document.getElementById('logFilterUser')?.value||'';
-  let list=getLog();if(logKategoriFilter)list=list.filter(l=>l.kategori===logKategoriFilter);if(tgl)list=list.filter(l=>l.tgl===tgl);if(user)list=list.filter(l=>l.user===user);
-  if(cari)list=list.filter(l=>l.subjek.toLowerCase().includes(cari)||l.aksi.toLowerCase().includes(cari)||l.detail.toLowerCase().includes(cari)||l.user.toLowerCase().includes(cari));
-  return list;
-}
-function renderLogger(){
-  const allLog=getLog(),hariIni=tglISO();
+
+let logPage=0; const LOG_PAGE_SIZE=25; let logKategoriFilter='';
+function setLogKategori(kat,btn){ logKategoriFilter=kat; logPage=0; document.querySelectorAll('.log-tab-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); renderLogger(); }
+
+async function renderLogger(){
+  const allLog = await getLog(), hariIni=tglISO();
   document.getElementById('logSumTotal').textContent=allLog.length;
   document.getElementById('logSumHariIni').textContent=allLog.filter(l=>l.tgl===hariIni).length;
   document.getElementById('logSumPetugas').textContent=new Set(allLog.map(l=>l.user)).size;
   document.getElementById('logSumError').textContent=allLog.filter(l=>l.kategori==='darurat').length;
-  const userSel=document.getElementById('logFilterUser'),curVal=userSel.value;
+  const userSel=document.getElementById('logFilterUser'), curVal=userSel.value;
   const users=[...new Set(allLog.map(l=>l.user))].sort();
   userSel.innerHTML='<option value="">Semua User</option>'+users.map(u=>`<option value="${u}"${u===curVal?' selected':''}>${u}</option>`).join('');
-  const list=getLogFiltered(),total=list.length,totalPage=Math.max(1,Math.ceil(total/LOG_PAGE_SIZE));
-  if(logPage>=totalPage)logPage=totalPage-1;
-  const start=logPage*LOG_PAGE_SIZE,slice=list.slice(start,start+LOG_PAGE_SIZE);
+  // Apply filters
+  const tgl=document.getElementById('logFilterTgl')?.value||'', cari=(document.getElementById('logFilterCari')?.value||'').toLowerCase(), user=document.getElementById('logFilterUser')?.value||'';
+  let list=allLog;
+  if(logKategoriFilter) list=list.filter(l=>l.kategori===logKategoriFilter);
+  if(tgl) list=list.filter(l=>l.tgl===tgl);
+  if(user) list=list.filter(l=>l.user===user);
+  if(cari) list=list.filter(l=>l.subjek.toLowerCase().includes(cari)||l.aksi.toLowerCase().includes(cari)||l.detail.toLowerCase().includes(cari)||l.user.toLowerCase().includes(cari));
+  const total=list.length, totalPage=Math.max(1,Math.ceil(total/LOG_PAGE_SIZE));
+  if(logPage>=totalPage) logPage=totalPage-1;
+  const start=logPage*LOG_PAGE_SIZE, slice=list.slice(start,start+LOG_PAGE_SIZE);
   document.getElementById('logPaginasiInfo').textContent=total===0?'Tidak ada log':`${start+1}–${Math.min(start+LOG_PAGE_SIZE,total)} dari ${total}`;
-  document.getElementById('logPrevBtn').disabled=logPage===0;document.getElementById('logNextBtn').disabled=logPage>=totalPage-1;
+  document.getElementById('logPrevBtn').disabled=logPage===0; document.getElementById('logNextBtn').disabled=logPage>=totalPage-1;
   const tbody=document.getElementById('logTableBody');
   if(!slice.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--abu3);">📭 Tidak ada log.</td></tr>';return;}
   tbody.innerHTML=slice.map((l,i)=>{
     const chip=`<span class="log-chip ${l.kategori}">${l.kategori.toUpperCase()}</span>`;
-    const rowId=`logrow_${String(l.id).replace('.','_')}`;const hasDetail=l.detail&&l.detail.trim();
+    const rowId=`logrow_${String(l.id).replace(/\./, '_').replace(/[^a-zA-Z0-9_]/g,'_')}`;
+    const hasDetail=l.detail&&l.detail.trim();
     return `<tr onclick="${hasDetail?`toggleLogDetail('${rowId}')`:''}" style="${hasDetail?'cursor:pointer':''}"><td class="mono">${start+i+1}</td><td class="mono" style="white-space:nowrap;">${l.tgl}<br>${l.jam}</td><td><span class="badge-pw">${esc(l.user)}</span></td><td>${chip}</td><td style="font-weight:600;font-size:0.78rem;">${esc(l.aksi)}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(l.subjek)}">${esc(l.subjek)}</td></tr>${hasDetail?`<tr class="log-detail-row" id="${rowId}" style="display:none"><td colspan="6">📌 ${esc(l.detail)}</td></tr>`:''}`;
   }).join('');
 }
-function toggleLogDetail(id){const row=document.getElementById(id);if(row)row.style.display=row.style.display==='none'?'table-row':'none';}
-function logPrevPage(){if(logPage>0){logPage--;renderLogger();}}
-function logNextPage(){logPage++;renderLogger();}
-function exportLogCSV(){
-  const list=getLogFiltered();if(!list.length){alert('Tidak ada data.');return;}
+function toggleLogDetail(id){ const row=document.getElementById(id); if(row) row.style.display=row.style.display==='none'?'table-row':'none'; }
+function logPrevPage(){ if(logPage>0){logPage--;renderLogger();} }
+function logNextPage(){ logPage++; renderLogger(); }
+async function exportLogCSV(){
+  const allLog = await getLog();
+  const tgl=document.getElementById('logFilterTgl')?.value||'', cari=(document.getElementById('logFilterCari')?.value||'').toLowerCase(), user=document.getElementById('logFilterUser')?.value||'';
+  let list=allLog;
+  if(logKategoriFilter) list=list.filter(l=>l.kategori===logKategoriFilter);
+  if(tgl) list=list.filter(l=>l.tgl===tgl); if(user) list=list.filter(l=>l.user===user);
+  if(cari) list=list.filter(l=>l.subjek.toLowerCase().includes(cari)||l.aksi.toLowerCase().includes(cari)||l.detail.toLowerCase().includes(cari)||l.user.toLowerCase().includes(cari));
+  if(!list.length){alert('Tidak ada data.');return;}
   const header=['No','Timestamp','Tanggal','Jam','User','Kategori','Aksi','Subjek','Detail'];
   const rows=list.map((l,i)=>[i+1,l.ts,l.tgl,l.jam,l.user,l.kategori,l.aksi,`"${(l.subjek||'').replace(/"/g,'""')}"`,`"${(l.detail||'').replace(/"/g,'""')}"`]);
   const csv=[header,...rows].map(r=>r.join(',')).join('\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`ciput_log_${tglISO()}.csv`;a.click();URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download=`ciput_log_${tglISO()}.csv`; a.click(); URL.revokeObjectURL(url);
   showNotifSukses(`⬇️ ${list.length} log diekspor`);
 }
-function konfirmasiHapusLog(){
+async function konfirmasiHapusLog(){
   if(!confirm('Hapus SEMUA log?'))return;
-  setStorage('actlog',[]);logPage=0;renderLogger();showNotifSukses('🗑️ Log dikosongkan.');
+  await clearLog(); logPage=0; renderLogger(); showNotifSukses('🗑️ Log dikosongkan.');
 }
 
-function showNotifSukses(teks){const n=document.getElementById('notifSukses');n.textContent=teks;n.style.display='block';setTimeout(()=>n.style.display='none',2500);}
+function showNotifSukses(teks){ const n=document.getElementById('notifSukses'); n.textContent=teks; n.style.display='block'; setTimeout(()=>n.style.display='none',2500); }
 
+// =============================================
 // INIT
-loadUsers();loadDataPasien();
-addLog('system','BOOT','Aplikasi Si Ciput dimuat',`v3.1 | ${new Date().toLocaleString('id-ID')}`,'system');
+// =============================================
+async function initApp(){
+  // Wait for Firebase module to load (it's type=module, runs async)
+  await new Promise(resolve => {
+    if(window._fbInitDone){ resolve(); return; }
+    document.addEventListener('fb-ready', resolve, {once:true});
+    setTimeout(resolve, 3000); // fallback timeout
+  });
+
+  // Try to init Firebase with saved config if not already ready
+  if(!window._fbReady && !window._fbInitDone){
+    const savedCfg = getFbConfig();
+    if(savedCfg){
+      // Config exists but module might not have loaded yet
+      console.log('Saved Firebase config found, module may not be ready yet');
+    }
+  }
+
+  await loadUsers();
+  await loadDataPasien();
+  addLog('system','BOOT','Aplikasi Si Ciput dimuat',`v4.0 Sync | ${new Date().toLocaleString('id-ID')}`,'system');
+
+  // Show setup prompt if Firebase not configured and no saved config
+  const savedCfg = getFbConfig();
+  if(!window._fbReady && !savedCfg){
+    // Show a gentle one-time notice (not blocking)
+    setTimeout(() => {
+      const bar = document.getElementById('syncBar');
+      if(bar){
+        bar.textContent = '⚠️ Sinkronisasi belum aktif — klik untuk setup Firebase';
+        bar.style.display='block';
+        bar.style.background='#d4860a';
+        bar.style.color='#fff';
+        bar.style.cursor='pointer';
+        bar.onclick = () => bukaFbSetup();
+      }
+    }, 1500);
+  }
+}
+
+// Auto-reload Firebase if config saved in localStorage but not yet in window
+(function(){
+  const savedCfg = getFbConfig();
+  if(savedCfg && !window._fbReady && !FIREBASE_CONFIG_INJECTED){
+    // Will be handled by the module script on next page load
+  }
+})();
+
+var FIREBASE_CONFIG_INJECTED = false;
+
+initApp().then(() => {
+  updateAIKeyUI();
+});
 </script>
+
+<!-- ============================================================ -->
+<!-- MODAL SETUP GOOGLE AI STUDIO                                 -->
+<!-- ============================================================ -->
+<div class="modal-overlay" id="modalAISetup">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="modal-title">🔑 Setup Google AI Studio</div>
+    <p style="font-size:0.82rem;color:var(--teks2);margin-bottom:1rem;line-height:1.7;">
+      Fitur analisis AI menggunakan <strong>Google Gemini 2.0 Flash</strong> — gratis, tanpa kartu kredit.
+    </p>
+    <div style="background:var(--biru-bg);border-left:3px solid var(--biru);border-radius:0 10px 10px 0;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.78rem;color:var(--teks2);line-height:1.8;">
+      <strong>Cara dapat API Key (2 menit):</strong><br>
+      1. Buka <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--biru);font-weight:600;">aistudio.google.com/apikey</a><br>
+      2. Login dengan akun Google<br>
+      3. Klik tombol <strong>"Create API key"</strong><br>
+      4. Pilih project → klik <strong>"Create API key in existing project"</strong><br>
+      5. Copy key yang muncul (dimulai <strong>AIza...</strong>) → paste di bawah
+    </div>
+    <div class="modal-form-group">
+      <label>Google AI Studio API Key</label>
+      <div style="display:flex;gap:6px;">
+        <input type="password" id="aiKeyInput" placeholder="AIzaSy..." style="flex:1;">
+        <button onclick="toggleTampilKey()" id="btnTampilKey"
+          style="background:var(--abu);border:1.5px solid var(--abu2);border-radius:9px;padding:0 12px;cursor:pointer;font-size:0.8rem;color:var(--teks2);font-family:'DM Sans',sans-serif;white-space:nowrap;">
+          👁 Lihat
+        </button>
+      </div>
+    </div>
+    <div id="aiSetupError" style="color:var(--merah);font-size:0.8rem;margin-bottom:0.5rem;display:none;"></div>
+    <div style="font-size:0.72rem;color:var(--abu3);margin-bottom:1rem;line-height:1.5;display:flex;align-items:flex-start;gap:6px;">
+      <span>🔒</span>
+      <span>API Key disimpan hanya di perangkat ini (localStorage). Tidak dikirim ke server manapun selain langsung ke Google.</span>
+    </div>
+    <div class="modal-btn-row">
+      <button class="btn btn-outline btn-sm" onclick="tutupModal('modalAISetup')">Batal</button>
+      <button class="btn btn-primary btn-sm" onclick="simpanAIKey()">💾 Simpan & Aktifkan</button>
+    </div>
+    <div style="text-align:center;margin-top:0.75rem;">
+      <button onclick="hapusAIKey()"
+        style="background:none;border:none;cursor:pointer;font-size:0.75rem;color:var(--merah);font-family:'DM Sans',sans-serif;">
+        🗑️ Hapus API Key tersimpan
+      </button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
